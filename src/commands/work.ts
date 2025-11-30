@@ -38,8 +38,17 @@ ${transcript}`;
 
 function parsePostsFromResponse(response: string): PostGenerationResult[] {
   try {
-    // Try to extract JSON from the response
-    const jsonMatch = response.match(/\[[\s\S]*\]/);
+    // Strip markdown code blocks if present
+    let cleanResponse = response.trim();
+
+    // Remove ```json and ``` markers
+    cleanResponse = cleanResponse.replace(/^```json\s*/i, '');
+    cleanResponse = cleanResponse.replace(/^```\s*/i, '');
+    cleanResponse = cleanResponse.replace(/\s*```$/i, '');
+    cleanResponse = cleanResponse.trim();
+
+    // Try to extract JSON array from the response
+    const jsonMatch = cleanResponse.match(/\[[\s\S]*\]/);
     if (!jsonMatch) {
       throw new Error('No JSON array found in response');
     }
@@ -49,7 +58,26 @@ function parsePostsFromResponse(response: string): PostGenerationResult[] {
       throw new Error('Response is not an array');
     }
 
-    return parsed.filter((item) => item && typeof item.content === 'string');
+    // Filter out posts with placeholder text
+    const validPosts = parsed.filter((item) => {
+      if (!item || typeof item.content !== 'string') return false;
+
+      // Reject posts with common placeholder patterns
+      const content = item.content;
+      if (content.includes('[Your Name]')) return false;
+      if (content.includes('[Topic]')) return false;
+      if (content.includes('[Company]')) return false;
+      if (content.includes('[Product]')) return false;
+      if (/\[[\w\s]+\]/.test(content)) return false; // Any [Placeholder Text]
+
+      return true;
+    });
+
+    if (validPosts.length === 0 && parsed.length > 0) {
+      throw new Error('All generated posts contained placeholder text - rejected');
+    }
+
+    return validPosts;
   } catch (error) {
     logger.error(`Failed to parse LLM response: ${(error as Error).message}`);
     logger.info('Raw response:');
