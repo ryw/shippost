@@ -216,13 +216,66 @@ your-project/
 Generated posts are stored in `posts.jsonl` as newline-delimited JSON:
 
 ```json
-{"id":"uuid","sourceFile":"input/meeting.txt","content":"Your generated post...","metadata":{"model":"llama3.1","temperature":0.7},"timestamp":"2024-01-15T10:30:00.000Z","status":"draft"}
+{
+  "id":"uuid",
+  "sourceFile":"input/meeting.txt",
+  "content":"Your generated post...",
+  "metadata":{
+    "model":"llama3.1",
+    "temperature":0.7,
+    "bangerScore":75,
+    "bangerEvaluation":{
+      "score":75,
+      "breakdown":{
+        "hook":18,
+        "emotional":16,
+        "value":12,
+        "format":13,
+        "relevance":8,
+        "engagement":8,
+        "authenticity":0
+      },
+      "reasoning":"Strong opening hook with curiosity gap..."
+    }
+  },
+  "timestamp":"2024-01-15T10:30:00.000Z",
+  "status":"draft"
+}
 ```
 
-Each post has a status:
-- `draft` — Newly generated, not yet staged
-- `staged` — Sent to Typefully
-- `published` — Posted to social media
+Each post includes:
+- **id** — Unique identifier
+- **sourceFile** — Input file the post was generated from
+- **content** — The post text
+- **metadata.model** — Ollama model used
+- **metadata.temperature** — Generation temperature
+- **metadata.bangerScore** — Viral potential score (1-99)
+- **metadata.bangerEvaluation** — Detailed scoring breakdown
+- **timestamp** — When the post was generated
+- **status** — `draft`, `staged`, or `published`
+
+### Banger Score
+
+Each generated post is automatically evaluated for its viral potential ("banger" score) on a scale of 1-99:
+
+| Score Range | Potential |
+|-------------|-----------|
+| 1-20 | Low - unlikely to gain traction |
+| 21-40 | Below average - limited reach |
+| 41-60 | Average - decent engagement |
+| 61-80 | High - strong engagement likely |
+| 81-99 | Exceptional - viral potential |
+
+The score is based on 7 key factors:
+1. **Hook Strength** (20 pts) - Scroll-stopping opening, curiosity gaps
+2. **Emotional Resonance** (20 pts) - Triggers awe, humor, surprise, FOMO
+3. **Value & Shareability** (15 pts) - Actionable value, social currency
+4. **Format & Structure** (15 pts) - Readability, pacing, visual appeal
+5. **Relevance & Timing** (10 pts) - Taps into current conversations
+6. **Engagement Potential** (10 pts) - Invites discussion, thought-provoking
+7. **Authenticity & Voice** (10 pts) - Human, relatable, genuine
+
+Use banger scores to prioritize which posts to publish first - start with your highest-scoring content!
 
 ## Getting Transcripts from Granola
 
@@ -308,6 +361,7 @@ All prompts used by t2p are stored as editable files in the `prompts/` directory
 **Advanced prompts** (optional, for power users):
 - `prompts/system.md` - System prompt wrapper for post generation
 - `prompts/analysis.md` - Prompt used to analyze your X posts and generate style guides
+- `src/templates/banger-eval.md` - Scoring criteria for evaluating viral potential (source code only)
 
 ### Why User-Editable Prompts?
 

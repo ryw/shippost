@@ -5,6 +5,7 @@ import { OllamaService } from '../services/ollama.js';
 import { logger } from '../utils/logger.js';
 import { isT2pProject } from '../utils/validation.js';
 import { NotInitializedError } from '../utils/errors.js';
+import { buildBangerEvalPrompt, parseBangerEval } from '../utils/banger-eval.js';
 import type { PostGenerationResult } from '../types/post.js';
 
 interface WorkOptions {
@@ -160,7 +161,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
         continue;
       }
 
-      // Save posts
+      // Evaluate and save posts
       for (const postData of posts) {
         const post = fs.createPost(
           relativePath,
@@ -168,6 +169,24 @@ export async function workCommand(options: WorkOptions): Promise<void> {
           ollama.getModelName(),
           ollama.getTemperature()
         );
+
+        // Evaluate banger potential
+        try {
+          const evalPrompt = buildBangerEvalPrompt(postData.content);
+          const evalResponse = await ollama.generate(evalPrompt);
+          const evaluation = parseBangerEval(evalResponse);
+
+          if (evaluation) {
+            post.metadata.bangerScore = evaluation.score;
+            post.metadata.bangerEvaluation = evaluation;
+          }
+        } catch (evalError) {
+          // Continue without score if evaluation fails
+          if (options.verbose) {
+            logger.info(`    Failed to evaluate banger score: ${(evalError as Error).message}`);
+          }
+        }
+
         fs.appendPost(post);
       }
 

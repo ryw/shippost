@@ -1,3 +1,19 @@
+export interface BangerScoreBreakdown {
+  hook: number;
+  emotional: number;
+  value: number;
+  format: number;
+  relevance: number;
+  engagement: number;
+  authenticity: number;
+}
+
+export interface BangerEvaluation {
+  score: number;
+  breakdown: BangerScoreBreakdown;
+  reasoning: string;
+}
+
 export interface Post {
   id: string;
   sourceFile: string;
@@ -6,6 +22,8 @@ export interface Post {
     model: string;
     temperature: number;
     tokens?: number;
+    bangerScore?: number;
+    bangerEvaluation?: BangerEvaluation;
   };
   timestamp: string;
   status: 'draft' | 'staged' | 'published';
