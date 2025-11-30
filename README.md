@@ -44,6 +44,8 @@ t2p init
 
 # 2. Add your transcripts to the input/ directory
 cp ~/meeting-notes.txt input/
+# Or copy from Granola (see "Getting Transcripts from Granola" section below)
+pbpaste > input/meeting-notes.txt
 
 # 3. Customize your prompts
 #    Edit prompts/style.md for your brand voice
@@ -164,6 +166,45 @@ Each post has a status:
 - `draft` — Newly generated, not yet staged
 - `staged` — Sent to Typefully
 - `published` — Posted to social media
+
+## Getting Transcripts from Granola
+
+[Granola](https://www.granola.ai/) is an AI meeting transcription tool. Here's how to get your meeting transcripts into t2p:
+
+### Method 1: Manual Copy (Built-in)
+
+1. Open your meeting note in Granola
+2. Click the transcription button (3 vertical bars) at the bottom of the note
+3. Click the copy button in the top right corner
+4. Save to a file:
+   ```bash
+   pbpaste > input/meeting-2024-01-15.txt
+   ```
+
+### Method 2: Chrome Extension (Recommended)
+
+The [Granola Transcriber Chrome extension](https://chromewebstore.google.com/detail/granola-transcriber/apoblbmhjjnfcefcmlidblklbjepfiin) provides one-click extraction:
+
+1. Install the Granola Transcriber extension
+2. Open your Granola note in Chrome
+3. Click the extension to extract and copy the transcript
+4. Save to your `input/` directory
+
+### Method 3: Raycast Extension (Bulk Export)
+
+For power users with [Raycast](https://www.raycast.com/):
+
+1. Install the [Granola Raycast extension](https://www.raycast.com/Rob/granola)
+2. Select multiple notes for bulk export
+3. Use folder-aware filtering to organize transcripts
+4. Export directly to your t2p `input/` directory
+
+### Tips for Granola Users
+
+- **Naming convention**: Use descriptive filenames like `YYYY-MM-DD-topic.txt` for easier tracking
+- **Batch processing**: Export multiple meetings at once, then run `t2p work` to process them all
+- **Integrations**: Granola also supports direct export to Notion, Hubspot, and Slack (no API/Zapier yet)
+- **Clean transcripts**: Remove excessive filler words in Granola before exporting for better post quality
 
 ## Example Workflow
 
