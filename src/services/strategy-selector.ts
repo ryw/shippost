@@ -1,8 +1,27 @@
 import type { ContentStrategy, TranscriptAnalysis, StrategyCategory } from '../types/strategy.js';
-import { CONTENT_STRATEGIES, STRATEGY_CATEGORIES } from '../data/strategies.js';
 
 export class StrategySelector {
-  constructor(private diversityWeight: number = 0.7) {}
+  private strategies: ContentStrategy[];
+  private strategiesByCategory: Map<StrategyCategory, ContentStrategy[]>;
+
+  constructor(
+    strategies: ContentStrategy[],
+    private diversityWeight: number = 0.7
+  ) {
+    this.strategies = strategies;
+    this.strategiesByCategory = this.groupByCategory(strategies);
+  }
+
+  private groupByCategory(strategies: ContentStrategy[]): Map<StrategyCategory, ContentStrategy[]> {
+    const grouped = new Map<StrategyCategory, ContentStrategy[]>();
+    for (const strategy of strategies) {
+      if (!grouped.has(strategy.category)) {
+        grouped.set(strategy.category, []);
+      }
+      grouped.get(strategy.category)!.push(strategy);
+    }
+    return grouped;
+  }
 
   /**
    * Select strategies based on transcript analysis
@@ -36,7 +55,7 @@ export class StrategySelector {
     const strategies: ContentStrategy[] = [];
 
     for (const id of ids) {
-      const strategy = CONTENT_STRATEGIES.find((s) => s.id === id);
+      const strategy = this.strategies.find((s) => s.id === id);
       if (strategy) {
         strategies.push(strategy);
       }
@@ -49,21 +68,21 @@ export class StrategySelector {
    * Get all strategies (for listing)
    */
   getAllStrategies(): ContentStrategy[] {
-    return [...CONTENT_STRATEGIES];
+    return [...this.strategies];
   }
 
   /**
    * Get strategies by category
    */
   getStrategiesByCategory(category: StrategyCategory): ContentStrategy[] {
-    return STRATEGY_CATEGORIES[category] || [];
+    return this.strategiesByCategory.get(category) || [];
   }
 
   /**
    * Filter strategies by applicability
    */
   private filterApplicable(analysis: TranscriptAnalysis): ContentStrategy[] {
-    return CONTENT_STRATEGIES.filter((strategy) => {
+    return this.strategies.filter((strategy) => {
       const { applicability } = strategy;
 
       // worksWithAnyContent always applies
@@ -190,7 +209,7 @@ export class StrategySelector {
    */
   private getGeneralPurposeStrategies(count: number): ContentStrategy[] {
     // Get strategies that work with any content
-    const generalPurpose = CONTENT_STRATEGIES.filter((s) => s.applicability.worksWithAnyContent);
+    const generalPurpose = this.strategies.filter((s) => s.applicability.worksWithAnyContent);
 
     if (generalPurpose.length <= count) {
       return generalPurpose;

@@ -9,7 +9,7 @@
 	},
 	"scripts": {
 		"build": "tsc && npm run copy-templates",
-		"copy-templates": "mkdir -p dist/templates && cp src/templates/*.md dist/templates/",
+		"copy-templates": "mkdir -p dist/templates && cp src/templates/*.md src/templates/*.json dist/templates/",
 		"dev": "tsx src/index.ts",
 		"prepare": "npm run build"
 	},

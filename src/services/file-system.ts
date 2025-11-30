@@ -63,6 +63,28 @@ export class FileSystemService {
     }
   }
 
+  loadStrategies(): any[] {
+    const strategiesPath = join(this.cwd, 'strategies.json');
+
+    if (!existsSync(strategiesPath)) {
+      // Return empty array if strategies file doesn't exist (backward compat)
+      return [];
+    }
+
+    try {
+      const content = readFileSync(strategiesPath, 'utf-8');
+      const strategies = JSON.parse(content);
+
+      if (!Array.isArray(strategies)) {
+        throw new Error('Strategies file must contain a JSON array');
+      }
+
+      return strategies;
+    } catch (error) {
+      throw new FileSystemError(`Failed to load strategies: ${(error as Error).message}`);
+    }
+  }
+
   appendPost(post: Post): void {
     const postsPath = join(this.cwd, 'posts.jsonl');
 

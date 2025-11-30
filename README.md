@@ -71,6 +71,7 @@ Initialize a new t2p project in the current directory. Creates:
 | `input/` | Directory for transcripts, notes, and source content |
 | `prompts/style.md` | Your posting style, brand voice, and tone guidelines |
 | `prompts/work.md` | Instructions for how posts should be generated |
+| `strategies.json` | **User-editable** content strategies (64 default strategies) |
 | `prompts/system.md` | System prompt for post generation (advanced) |
 | `prompts/analysis.md` | Style analysis prompt for X posts (advanced) |
 | `prompts/content-analysis.md` | Content strategy selection prompt (advanced) |
@@ -255,6 +256,7 @@ your-project/
 │   ├── analysis.md           # Style analysis prompt (advanced)
 │   ├── content-analysis.md   # Content strategy selection (advanced)
 │   └── banger-eval.md        # Viral potential scoring (advanced)
+├── strategies.json           # Content strategies (CUSTOMIZABLE!)
 ├── posts.jsonl               # Generated posts (created after first run)
 └── .t2prc.json               # Configuration
 ```
@@ -333,7 +335,7 @@ Use banger scores to prioritize which posts to publish first - start with your h
 
 ## Content Strategies
 
-t2p uses **75 proven content strategies** inspired by Typefully's successful post formats. Each strategy provides a unique angle or format for presenting your ideas, ensuring maximum variety and engagement across your content.
+t2p includes **64 proven content strategies** inspired by Typefully's successful post formats. Strategies are **fully customizable** via `strategies.json` - add your own, modify existing ones, or remove strategies you don't need. Each strategy provides a unique angle or format for presenting your ideas, ensuring maximum variety and engagement across your content.
 
 ### What Are Content Strategies?
 
@@ -422,6 +424,69 @@ t2p work --count 3 --strategies "personal-story,how-to-guide,bold-observation"
 t2p work --no-strategies
 ```
 
+### Customizing Strategies
+
+Strategies are defined in `strategies.json` in your project root. This file is **fully editable** - modify existing strategies, add new ones, or remove strategies you don't use.
+
+**Strategy Structure:**
+```json
+{
+  "id": "my-custom-strategy",
+  "name": "My Custom Strategy Name",
+  "prompt": "The prompt that will be sent to the LLM to guide post generation...",
+  "category": "personal",
+  "threadFriendly": false,
+  "applicability": {
+    "requiresPersonalNarrative": true,
+    "worksWithAnyContent": false
+  }
+}
+```
+
+**Fields:**
+- **id** - Unique identifier (used with `--strategy` flag)
+- **name** - Human-readable name shown in `--list-strategies`
+- **prompt** - Instructions for the LLM on how to format this post type
+- **category** - One of: `personal`, `educational`, `provocative`, `engagement`, `curation`, `behind-the-scenes`, `reflective`
+- **threadFriendly** - `true` if this works well in threads, `false` for standalone posts
+- **applicability** - Rules for when this strategy applies:
+  - `requiresPersonalNarrative` - Needs personal stories
+  - `requiresActionableKnowledge` - Needs how-to/tips content
+  - `requiresResources` - Needs tool/book mentions
+  - `requiresProject` - Needs project context
+  - `requiresStrongOpinion` - Needs strong viewpoints
+  - `worksWithAnyContent` - Always applicable (fallback strategies)
+
+**Adding a Custom Strategy:**
+```bash
+# 1. Edit strategies.json
+vim strategies.json
+
+# 2. Add your strategy to the array
+[
+  ...existing strategies...,
+  {
+    "id": "weekly-reflection",
+    "name": "Weekly Reflection Post",
+    "prompt": "Share a key lesson or insight from this week. What did you learn? What surprised you? Keep it personal and relatable.",
+    "category": "reflective",
+    "threadFriendly": false,
+    "applicability": {
+      "worksWithAnyContent": true
+    }
+  }
+]
+
+# 3. Test your new strategy
+t2p work --strategy weekly-reflection
+```
+
+**Removing Strategies:**
+Simply delete the strategy object from the array in `strategies.json`. The system will continue to work with any number of strategies (even just one!).
+
+**Modifying Prompts:**
+Edit the `prompt` field to change how posts are generated. For example, you might want to add more specific instructions, change the tone, or adjust the format.
+
 ### Configuration
 
 Fine-tune strategy behavior in `.t2prc.json`:
@@ -447,7 +512,7 @@ Fine-tune strategy behavior in `.t2prc.json`:
 
 ### Benefits
 
-**Variety** — Never run out of angles. 75 strategies ensure fresh approaches to your content.
+**Variety** — Never run out of angles. 64 default strategies ensure fresh approaches, and you can add unlimited custom strategies.
 
 **Quality** — Proven formats that have driven engagement on social media.
 

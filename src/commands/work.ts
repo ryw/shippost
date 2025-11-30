@@ -103,8 +103,16 @@ ${transcript}
 Generate a SINGLE post following the strategy above.`;
 }
 
-function listStrategiesCommand(options: WorkOptions): void {
-  const selector = new StrategySelector();
+function listStrategiesCommand(fs: FileSystemService, options: WorkOptions): void {
+  const userStrategies = fs.loadStrategies();
+
+  if (userStrategies.length === 0) {
+    logger.error('No strategies found. Create strategies.json in your project directory.');
+    logger.info('Run: t2p init  # to create default strategies file');
+    process.exit(1);
+  }
+
+  const selector = new StrategySelector(userStrategies);
   const strategies = options.category
     ? selector.getStrategiesByCategory(options.category as StrategyCategory)
     : selector.getAllStrategies();
@@ -147,15 +155,15 @@ function listStrategiesCommand(options: WorkOptions): void {
 
 export async function workCommand(options: WorkOptions): Promise<void> {
   const cwd = process.cwd();
+  const fs = new FileSystemService(cwd);
 
   // Handle --list-strategies early exit
   if (options.listStrategies) {
-    listStrategiesCommand(options);
+    listStrategiesCommand(fs, options);
     return;
   }
 
   try {
-    const fs = new FileSystemService(cwd);
 
     // Step 1: Validate environment
     logger.section('[1/3] Checking environment...');
@@ -199,9 +207,14 @@ export async function workCommand(options: WorkOptions): Promise<void> {
     ? fs.loadPrompt('content-analysis.md')
     : '';
 
+  // Load user-defined strategies
+  const userStrategies = fs.loadStrategies();
+  logger.success(`Loaded ${userStrategies.length} content strategies`);
+
   // Initialize strategy services
   const contentAnalyzer = analysisTemplate ? new ContentAnalyzer(ollama, analysisTemplate) : null;
   const strategySelector = new StrategySelector(
+    userStrategies,
     config.generation.strategies?.diversityWeight || 0.7
   );
 
