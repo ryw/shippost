@@ -107,16 +107,17 @@ t2p work --model llama2 --verbose
 Generate a personalized style guide by analyzing your X (Twitter) posts. Uses X API v2 (free tier) to fetch your recent tweets and Ollama to analyze your writing patterns.
 
 **Options:**
-- `--count <n>` — Number of tweets to fetch (default: 100, max: 100)
-- `--overwrite` — Overwrite existing style.md without prompting
+- `--count <n>` — Number of tweets to fetch (default: 33, max: 100)
+- `--overwrite` — Overwrite existing style-from-analysis.md without prompting
 - `--setup` — Reconfigure X API credentials
 
 ```bash
 # First time setup (will prompt for X API credentials)
+# Analyzes 33 tweets by default
 t2p analyze-x
 
-# Fetch fewer tweets
-t2p analyze-x --count 50
+# Fetch more tweets for deeper analysis
+t2p analyze-x --count 100
 
 # Overwrite existing style guide
 t2p analyze-x --overwrite
@@ -128,9 +129,11 @@ t2p analyze-x --setup
 **What it does:**
 1. Configures X API OAuth 2.0 authentication (first time only)
 2. Opens browser for you to authorize the app
-3. Fetches your recent tweets (up to 100)
+3. Fetches your recent tweets (default: 33)
 4. Analyzes writing patterns with Ollama
-5. Generates and saves a personalized style guide to `prompts/style.md`
+5. Generates and saves a personalized style guide to `prompts/style-from-analysis.md`
+
+**Note:** The analysis is saved to `style-from-analysis.md` (not `style.md`) so you can review it first and merge insights into your main style guide as desired.
 
 **Requirements:**
 - Free X Developer account ([sign up here](https://developer.x.com/))

@@ -81,7 +81,7 @@ export async function analyzeXCommand(options: AnalyzeXOptions): Promise<void> {
     const user = await apiService.getMe();
     logger.success(`Authenticated as: @${user.username}`);
 
-    const maxResults = Math.min(options.count || 100, 100);
+    const maxResults = Math.min(options.count || 33, 100);
     const tweets = await apiService.getMyTweets(maxResults);
 
     if (tweets.length === 0) {
@@ -106,11 +106,11 @@ export async function analyzeXCommand(options: AnalyzeXOptions): Promise<void> {
     // Step 5: Save style guide
     logger.section('[5/5] Saving style guide...');
 
-    const stylePath = join(cwd, 'prompts', 'style.md');
+    const stylePath = join(cwd, 'prompts', 'style-from-analysis.md');
     const styleExists = fs.fileExists(stylePath);
 
     if (styleExists && !options.overwrite) {
-      logger.info('Style guide already exists at prompts/style.md');
+      logger.info('Style guide already exists at prompts/style-from-analysis.md');
       const answer = await readlineSync('Overwrite existing style guide? (y/n): ');
 
       if (answer.toLowerCase() !== 'y') {
@@ -120,7 +120,7 @@ export async function analyzeXCommand(options: AnalyzeXOptions): Promise<void> {
     }
 
     fs.writeFile(stylePath, styleGuide);
-    logger.success('Style guide saved to prompts/style.md');
+    logger.success('Style guide saved to prompts/style-from-analysis.md');
 
     // Summary
     logger.blank();
@@ -128,10 +128,11 @@ export async function analyzeXCommand(options: AnalyzeXOptions): Promise<void> {
     logger.blank();
     logger.info('Summary:');
     logger.info(`- Analyzed ${tweets.length} tweets from @${user.username}`);
-    logger.info(`- Style guide saved to: prompts/style.md`);
+    logger.info(`- Style guide saved to: prompts/style-from-analysis.md`);
     logger.blank();
     logger.info('Next steps:');
-    logger.info('- Review and refine prompts/style.md if needed');
+    logger.info('- Review prompts/style-from-analysis.md');
+    logger.info('- Copy/merge insights into prompts/style.md if desired');
     logger.info('- Add transcripts to input/');
     logger.info('- Run: t2p work');
   } catch (error) {

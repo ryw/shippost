@@ -36,8 +36,8 @@ program
 program
   .command('analyze-x')
   .description('Generate style guide from your X (Twitter) posts')
-  .option('--count <n>', 'Number of tweets to fetch (max 100)', parseInt, 100)
-  .option('--overwrite', 'Overwrite existing style.md without prompting')
+  .option('--count <n>', 'Number of tweets to fetch (max 100)', parseInt, 33)
+  .option('--overwrite', 'Overwrite existing style-from-analysis.md without prompting')
   .option('--setup', 'Reconfigure X API credentials')
   .action(analyzeXCommand);
 
