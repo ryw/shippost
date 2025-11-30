@@ -48,7 +48,7 @@ export class FileSystemService {
     }
   }
 
-  loadPrompt(filename: 'style.md' | 'work.md'): string {
+  loadPrompt(filename: 'style.md' | 'work.md' | 'system.md' | 'analysis.md'): string {
     const promptPath = join(this.cwd, 'prompts', filename);
 
     if (!existsSync(promptPath)) {

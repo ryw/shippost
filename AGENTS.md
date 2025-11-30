@@ -121,6 +121,30 @@ history/
 - ✅ Preserves planning history for archeological research
 - ✅ Reduces noise when browsing the project
 
+### Prompt Management
+
+**CRITICAL**: All prompts must be user-editable and stored in the `prompts/` directory.
+
+**Rule**: Never hardcode prompts in source code. Always load prompts from files in the `prompts/` directory so users can customize them without editing code.
+
+**Prompt files:**
+- `prompts/style.md` - User's posting style and voice
+- `prompts/work.md` - Post generation instructions
+- `prompts/system.md` - System prompt for post generation
+- `prompts/analysis.md` - Style analysis prompt for X posts
+
+**Why this matters:**
+- ✅ Users can customize prompts without touching code
+- ✅ Prompts are version controlled with the project
+- ✅ Easy to experiment with different prompting strategies
+- ✅ Clear separation between code and configuration
+
+**When adding new features:**
+- If a feature uses an LLM prompt, create a new file in `prompts/`
+- Load the prompt from the file, never hardcode it
+- Update `t2p init` to create the new prompt file
+- Update FileSystemService's `loadPrompt()` type signature
+
 ### Important Rules
 
 - ✅ Use bd for ALL task tracking
@@ -128,9 +152,11 @@ history/
 - ✅ Link discovered work with `discovered-from` dependencies
 - ✅ Check `bd ready` before asking "what should I work on?"
 - ✅ Store AI planning docs in `history/` directory
+- ✅ **All prompts must be user-editable in `prompts/` directory**
 - ❌ Do NOT create markdown TODO lists
 - ❌ Do NOT use external issue trackers
 - ❌ Do NOT duplicate tracking systems
 - ❌ Do NOT clutter repo root with planning documents
+- ❌ **Do NOT hardcode prompts in source code**
 
 For more details, see README.md and QUICKSTART.md.

@@ -95,7 +95,8 @@ export async function analyzeXCommand(options: AnalyzeXOptions): Promise<void> {
     // Step 4: Analyze with Ollama
     logger.section('[4/5] Analyzing writing style...');
 
-    const prompt = buildStyleAnalysisPrompt(tweets);
+    const analysisPrompt = fs.loadPrompt('analysis.md');
+    const prompt = buildStyleAnalysisPrompt(analysisPrompt, tweets);
     logger.info(`Analyzing ${tweets.length} tweets to understand your style...`);
 
     const response = await ollama.generate(prompt);

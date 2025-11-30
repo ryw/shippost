@@ -61,6 +61,68 @@ Generate social media post ideas from the provided transcript or notes.
 - Would you actually post this?
 `;
 
+const SYSTEM_TEMPLATE = `# System Prompt for Post Generation
+
+You are a social media post generator. Your task is to create engaging posts from meeting transcripts.
+
+## Your Role
+- Transform raw transcripts into polished social media posts
+- Follow the user's style guide and work instructions
+- Generate multiple post ideas with different angles
+- Ensure posts are self-contained and engaging
+
+## Output Format
+Generate 5 social media post ideas. Format your response as a JSON array with each post as an object containing a "content" field.
+
+Example format:
+[
+  {"content": "First post idea here..."},
+  {"content": "Second post idea here..."}
+]
+
+## Important Notes
+- Stay true to the user's voice from style.md
+- Follow the generation instructions from work.md
+- Extract the most valuable insights from the transcript
+- Make posts standalone - don't assume context
+
+Your response:`;
+
+const ANALYSIS_TEMPLATE = `# Style Analysis Prompt
+
+You are a writing style analyst. Your task is to analyze a collection of tweets from a single author and create a comprehensive style guide that captures their unique voice, patterns, and preferences.
+
+## Analysis Task
+Based on the provided tweets, create a detailed style guide following this exact format:
+
+# Posting Style Guide
+
+## Voice & Tone
+[Analyze and describe the author's voice and tone. Consider: Are they casual or formal? Professional or conversational? Humorous or serious? Authoritative or humble? Technical or accessible? List specific characteristics you observe.]
+
+## Brand Guidelines
+[Identify recurring themes, topics, and values. What does this person consistently talk about? What are their areas of expertise or interest? What topics do they avoid? What values or principles shine through?]
+
+## Format Preferences
+[Analyze their posting patterns: Do they prefer short, punchy posts or longer explanations? Do they use threads? How do they use emojis (frequently, sparingly, never)? Do they use hashtags? How? Do they use formatting like line breaks, bullets, or caps?]
+
+## Examples of Your Best Posts
+[Select 3-5 of the most representative tweets that showcase their style at its best. Include the full text of these tweets. Choose tweets that demonstrate their voice, engage their audience, and exemplify their typical content.]
+
+## Target Audience
+[Infer who they're writing for based on content, tone, and topics. Consider: What's their audience's level of expertise? What do they care about? What problems are they trying to solve? How technical or casual should content be?]
+
+## Important Guidelines
+- Be specific and concrete in your analysis
+- Use actual examples and patterns you observe
+- Avoid generic statements - focus on what makes THIS author unique
+- Write in second person ("you write...", "your style...") as this will guide the author
+- The style guide should be immediately actionable for content generation
+- Include at least 3-5 specific observations in each section
+- Quote or reference specific tweets when relevant
+
+Generate the complete style guide now:`;
+
 export async function initCommand(): Promise<void> {
   const cwd = process.cwd();
   const fs = new FileSystemService(cwd);
@@ -86,6 +148,12 @@ export async function initCommand(): Promise<void> {
     fs.writeFile(join(cwd, 'prompts', 'work.md'), WORK_TEMPLATE);
     logger.success('Created file: prompts/work.md');
 
+    fs.writeFile(join(cwd, 'prompts', 'system.md'), SYSTEM_TEMPLATE);
+    logger.success('Created file: prompts/system.md');
+
+    fs.writeFile(join(cwd, 'prompts', 'analysis.md'), ANALYSIS_TEMPLATE);
+    logger.success('Created file: prompts/analysis.md');
+
     // Create empty posts.jsonl
     fs.writeFile(join(cwd, 'posts.jsonl'), '');
     logger.success('Created file: posts.jsonl');
@@ -101,8 +169,9 @@ export async function initCommand(): Promise<void> {
     logger.info('Next steps:');
     logger.info('1. Edit prompts/style.md to define your posting style');
     logger.info('2. Edit prompts/work.md to customize post generation');
-    logger.info('3. Add transcript files to input/');
-    logger.info('4. Run: t2p work');
+    logger.info('3. (Optional) Edit prompts/system.md and prompts/analysis.md for advanced customization');
+    logger.info('4. Add transcript files to input/');
+    logger.info('5. Run: t2p work');
   } catch (error) {
     logger.error(`Initialization failed: ${(error as Error).message}`);
     process.exit(1);

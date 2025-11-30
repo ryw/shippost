@@ -70,6 +70,8 @@ Initialize a new t2p project in the current directory. Creates:
 | `input/` | Directory for transcripts, notes, and source content |
 | `prompts/style.md` | Your posting style, brand voice, and tone guidelines |
 | `prompts/work.md` | Instructions for how posts should be generated |
+| `prompts/system.md` | System prompt for post generation (advanced) |
+| `prompts/analysis.md` | Style analysis prompt for X posts (advanced) |
 | `.t2prc.json` | Project configuration file |
 
 ### `t2p work`
@@ -202,7 +204,9 @@ your-project/
 │   └── notes.md
 ├── prompts/
 │   ├── style.md        # Brand voice & tone
-│   └── work.md         # Generation instructions
+│   ├── work.md         # Generation instructions
+│   ├── system.md       # System prompt (advanced)
+│   └── analysis.md     # Style analysis prompt (advanced)
 ├── posts.jsonl         # Generated posts (created after first run)
 └── .t2prc.json         # Configuration
 ```
@@ -290,6 +294,44 @@ cat posts.jsonl | jq '.content' -r
 cp ~/new-transcript.txt input/
 t2p work  # Appends new posts to posts.jsonl
 ```
+
+## Customizing Prompts
+
+All prompts used by t2p are stored as editable files in the `prompts/` directory. This allows you to customize the AI's behavior without touching any code.
+
+### Prompt Files
+
+**Core prompts** (edit these for best results):
+- `prompts/style.md` - Your posting style, voice, and brand guidelines
+- `prompts/work.md` - Instructions for how posts should be generated from transcripts
+
+**Advanced prompts** (optional, for power users):
+- `prompts/system.md` - System prompt wrapper for post generation
+- `prompts/analysis.md` - Prompt used to analyze your X posts and generate style guides
+
+### Why User-Editable Prompts?
+
+- ✅ **No code changes needed** - Customize behavior by editing markdown files
+- ✅ **Version controlled** - Track prompt changes with git
+- ✅ **Easy experimentation** - Try different prompting strategies quickly
+- ✅ **Project-specific** - Each project can have its own unique prompts
+
+### When to Edit Prompts
+
+**Edit `style.md`** when:
+- You want to refine your brand voice
+- You're not getting posts in the right tone
+- You want to add/remove example posts
+
+**Edit `work.md`** when:
+- Posts need a different structure
+- You want more/fewer posts per transcript
+- You want to change quality criteria
+
+**Edit `system.md` or `analysis.md`** (advanced) when:
+- You want to change the core prompting strategy
+- You're experimenting with prompt engineering
+- You need very specific AI behavior
 
 ## Tips & Best Practices
 

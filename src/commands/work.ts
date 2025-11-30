@@ -12,8 +12,8 @@ interface WorkOptions {
   verbose?: boolean;
 }
 
-function buildPrompt(styleGuide: string, workInstructions: string, transcript: string): string {
-  return `You are a social media post generator. Your task is to create engaging posts from meeting transcripts.
+function buildPrompt(systemPrompt: string, styleGuide: string, workInstructions: string, transcript: string): string {
+  return `${systemPrompt}
 
 STYLE GUIDE:
 ${styleGuide}
@@ -22,17 +22,7 @@ INSTRUCTIONS:
 ${workInstructions}
 
 TRANSCRIPT TO PROCESS:
-${transcript}
-
-Generate 5 social media post ideas. Format your response as a JSON array with each post as an object containing a "content" field.
-
-Example format:
-[
-  {"content": "First post idea here..."},
-  {"content": "Second post idea here..."}
-]
-
-Your response:`;
+${transcript}`;
 }
 
 function parsePostsFromResponse(response: string): PostGenerationResult[] {
@@ -109,6 +99,9 @@ export async function workCommand(options: WorkOptions): Promise<void> {
   // Step 2: Load context
   logger.section('[2/3] Loading context...');
 
+  const systemPrompt = fs.loadPrompt('system.md');
+  logger.success('Loaded system prompt');
+
   const styleGuide = fs.loadPrompt('style.md');
   logger.success('Loaded style guide');
 
@@ -145,7 +138,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
       }
 
       // Build prompt
-      const prompt = buildPrompt(styleGuide, workInstructions, transcript);
+      const prompt = buildPrompt(systemPrompt, styleGuide, workInstructions, transcript);
 
       if (options.verbose) {
         logger.info(`  Prompt length: ${prompt.length} characters`);
