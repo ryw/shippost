@@ -24,6 +24,11 @@ export interface Post {
     tokens?: number;
     bangerScore?: number;
     bangerEvaluation?: BangerEvaluation;
+    strategy?: {
+      id: string;
+      name: string;
+      category: string;
+    };
   };
   timestamp: string;
   status: 'draft' | 'staged' | 'published';

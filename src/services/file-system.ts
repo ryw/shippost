@@ -49,7 +49,7 @@ export class FileSystemService {
     }
   }
 
-  loadPrompt(filename: 'style.md' | 'work.md' | 'system.md' | 'analysis.md' | 'banger-eval.md'): string {
+  loadPrompt(filename: 'style.md' | 'work.md' | 'system.md' | 'analysis.md' | 'banger-eval.md' | 'content-analysis.md'): string {
     const promptPath = join(this.cwd, 'prompts', filename);
 
     if (!existsSync(promptPath)) {

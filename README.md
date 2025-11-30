@@ -9,6 +9,7 @@ t2p is a CLI tool that processes meeting transcripts, notes, and other written c
 ## Features
 
 - ✅ **Local LLM Processing** — Uses Ollama for privacy-first content generation
+- ✅ **Content Strategies** — 75 proven post formats for maximum variety and engagement
 - ✅ **Customizable Style** — Define your brand voice and posting style
 - ✅ **X Post Analysis** — Auto-generate style guides from your X (Twitter) posts
 - ✅ **JSONL Output** — Generated posts stored in an append-only format for easy tracking
@@ -72,6 +73,7 @@ Initialize a new t2p project in the current directory. Creates:
 | `prompts/work.md` | Instructions for how posts should be generated |
 | `prompts/system.md` | System prompt for post generation (advanced) |
 | `prompts/analysis.md` | Style analysis prompt for X posts (advanced) |
+| `prompts/content-analysis.md` | Content strategy selection prompt (advanced) |
 | `prompts/banger-eval.md` | Viral potential scoring criteria (advanced) |
 | `.t2prc.json` | Project configuration file |
 
@@ -83,22 +85,43 @@ Process all files in `input/` and generate new post ideas. Posts are appended to
 - `-m, --model <model>` — Override the Ollama model from config
 - `-v, --verbose` — Show detailed processing information
 - `-f, --force` — Force reprocessing of all files (bypass tracking)
+- `-c, --count <number>` — Number of posts to generate per file (default: 8)
+- `-s, --strategy <id>` — Use a specific content strategy by ID
+- `--strategies <ids>` — Use multiple strategies (comma-separated)
+- `--list-strategies` — List all available content strategies
+- `--category <category>` — Filter strategies by category (use with --list-strategies)
+- `--no-strategies` — Disable strategy-based generation (use legacy mode)
 
 ```bash
-# Use default settings
+# Use default settings (auto-selects 8 diverse strategies)
 t2p work
 
-# Use a specific model
-t2p work --model llama3.1
+# List all available content strategies
+t2p work --list-strategies
 
-# Verbose output with processing details
-t2p work --verbose
+# List strategies in a specific category
+t2p work --list-strategies --category educational
 
-# Force reprocessing all files (ignore state tracking)
-t2p work --force
+# Use a specific strategy for all posts
+t2p work --strategy bold-observation
+
+# Use multiple specific strategies
+t2p work --strategies "personal-story,how-to-guide,contrarian-take"
+
+# Generate more posts per file
+t2p work --count 12
+
+# Use legacy mode (no strategies)
+t2p work --no-strategies
+
+# Use a specific model with verbose output
+t2p work --model llama3.1 --verbose
+
+# Force reprocessing with custom strategy
+t2p work --force --strategy thread-lesson
 
 # Combine options
-t2p work --model llama2 --verbose --force
+t2p work --model llama2 --count 10 --verbose
 ```
 
 **What it does:**
@@ -190,8 +213,14 @@ Configuration is stored in `.t2prc.json`:
     "timeout": 60000
   },
   "generation": {
-    "postsPerTranscript": 5,
-    "temperature": 0.7
+    "postsPerTranscript": 8,
+    "temperature": 0.7,
+    "strategies": {
+      "enabled": true,
+      "autoSelect": true,
+      "diversityWeight": 0.7,
+      "preferThreadFriendly": false
+    }
   }
 }
 ```
@@ -203,8 +232,12 @@ Configuration is stored in `.t2prc.json`:
 | `ollama.host` | `http://127.0.0.1:11434` | Ollama server URL |
 | `ollama.model` | `llama3.1` | LLM model to use |
 | `ollama.timeout` | `60000` | Request timeout in milliseconds |
-| `generation.postsPerTranscript` | `5` | Number of posts to generate per input file |
+| `generation.postsPerTranscript` | `8` | Number of posts to generate per input file |
 | `generation.temperature` | `0.7` | LLM temperature (0.0-1.0, higher = more creative) |
+| `generation.strategies.enabled` | `true` | Enable strategy-based post generation |
+| `generation.strategies.autoSelect` | `true` | Auto-select strategies based on content analysis |
+| `generation.strategies.diversityWeight` | `0.7` | Strategy diversity (0.0-1.0, higher = more diverse categories) |
+| `generation.strategies.preferThreadFriendly` | `false` | Prioritize thread-friendly strategies |
 
 ## Project Structure
 
@@ -212,17 +245,18 @@ After running `t2p init`, your project will look like:
 
 ```
 your-project/
-├── input/              # Your source content
+├── input/                    # Your source content
 │   ├── meeting-2024-01.txt
 │   └── notes.md
 ├── prompts/
-│   ├── style.md        # Brand voice & tone
-│   ├── work.md         # Generation instructions
-│   ├── system.md       # System prompt (advanced)
-│   ├── analysis.md     # Style analysis prompt (advanced)
-│   └── banger-eval.md  # Viral potential scoring (advanced)
-├── posts.jsonl         # Generated posts (created after first run)
-└── .t2prc.json         # Configuration
+│   ├── style.md              # Brand voice & tone
+│   ├── work.md               # Generation instructions
+│   ├── system.md             # System prompt (advanced)
+│   ├── analysis.md           # Style analysis prompt (advanced)
+│   ├── content-analysis.md   # Content strategy selection (advanced)
+│   └── banger-eval.md        # Viral potential scoring (advanced)
+├── posts.jsonl               # Generated posts (created after first run)
+└── .t2prc.json               # Configuration
 ```
 
 ## Output Format
@@ -237,6 +271,11 @@ Generated posts are stored in `posts.jsonl` as newline-delimited JSON:
   "metadata":{
     "model":"llama3.1",
     "temperature":0.7,
+    "strategy":{
+      "id":"personal-story",
+      "name":"Personal Story or Experience",
+      "category":"personal"
+    },
     "bangerScore":75,
     "bangerEvaluation":{
       "score":75,
@@ -263,6 +302,7 @@ Each post includes:
 - **content** — The post text
 - **metadata.model** — Ollama model used
 - **metadata.temperature** — Generation temperature
+- **metadata.strategy** — Content strategy used (id, name, category)
 - **metadata.bangerScore** — Viral potential score (1-99)
 - **metadata.bangerEvaluation** — Detailed scoring breakdown
 - **timestamp** — When the post was generated
@@ -290,6 +330,147 @@ The score is based on 7 key factors:
 7. **Authenticity & Voice** (10 pts) - Human, relatable, genuine
 
 Use banger scores to prioritize which posts to publish first - start with your highest-scoring content!
+
+## Content Strategies
+
+t2p uses **75 proven content strategies** inspired by Typefully's successful post formats. Each strategy provides a unique angle or format for presenting your ideas, ensuring maximum variety and engagement across your content.
+
+### What Are Content Strategies?
+
+Content strategies are tested frameworks for structuring social media posts. Instead of generating generic posts, t2p applies specific strategies like:
+- **Personal Story** - Share an experience, failure, or transformation
+- **How-To Guide** - Provide step-by-step instructions
+- **Bold Observation** - Make a provocative statement that captures attention
+- **Before & After** - Show transformation or progress
+- **Resource Thread** - Curate a list of valuable tools or links
+- **Behind-the-Scenes** - Show your process or work-in-progress
+
+### How It Works
+
+**1. Content Analysis**
+When you run `t2p work`, the system analyzes your transcript to identify characteristics:
+- Does it contain personal stories?
+- Does it include actionable advice?
+- Are there strong opinions?
+- Is it about a specific project?
+
+**2. Strategy Selection**
+Based on the analysis, t2p intelligently selects applicable strategies:
+- Filters out strategies that don't fit your content (e.g., won't use "Personal Story" if there are no personal anecdotes)
+- Ensures diversity across 7 categories (personal, educational, provocative, engagement, curation, behind-the-scenes, reflective)
+- Uses weighted random selection to avoid over-representing any single category
+
+**3. Post Generation**
+Each post is generated using one specific strategy:
+- The strategy's prompt is injected between your work instructions and the transcript
+- The LLM generates a focused post following that strategy's format
+- Strategy metadata is saved with each post for tracking
+
+### Strategy Categories
+
+| Category | Description | Example Strategies |
+|----------|-------------|--------------------|
+| **Personal** | Stories, experiences, transformations | Personal Story, Failure Story, Transformation |
+| **Educational** | How-tos, frameworks, actionable tips | How-To Guide, Step-by-Step Framework, Quick Tip |
+| **Provocative** | Bold statements, contrarian takes | Bold Observation, Contrarian Take, Myth Busting |
+| **Engagement** | Questions, polls, thought experiments | Open Question, This or That, Thought Experiment |
+| **Curation** | Lists, recommendations, resources | Resource List, Tool Recommendation, Thread of Links |
+| **Behind-the-Scenes** | Process, work-in-progress, building | Building in Public, Process Share, WIP Update |
+| **Reflective** | Lessons learned, retrospectives | Lesson Learned, Retrospective, Before & After |
+
+### Using Strategies
+
+**Auto-Select Mode (Default)**
+```bash
+# Automatically selects 8 diverse strategies per transcript
+t2p work
+```
+
+**List Available Strategies**
+```bash
+# See all 75 strategies
+t2p work --list-strategies
+
+# Filter by category
+t2p work --list-strategies --category educational
+```
+
+**Manual Strategy Selection**
+```bash
+# Use one specific strategy
+t2p work --strategy personal-story
+
+# Use multiple strategies
+t2p work --strategies "how-to-guide,bold-observation,resource-list"
+
+# Use 5 strategies from educational category
+t2p work --strategies "how-to-guide,step-by-step,framework,quick-tip,common-mistakes"
+```
+
+**Control Post Count**
+```bash
+# Generate 12 posts instead of 8
+t2p work --count 12
+
+# Generate just 3 posts with specific strategies
+t2p work --count 3 --strategies "personal-story,how-to-guide,bold-observation"
+```
+
+**Disable Strategies (Legacy Mode)**
+```bash
+# Use original batch generation (no strategies)
+t2p work --no-strategies
+```
+
+### Configuration
+
+Fine-tune strategy behavior in `.t2prc.json`:
+
+```json
+{
+  "generation": {
+    "postsPerTranscript": 8,
+    "strategies": {
+      "enabled": true,
+      "autoSelect": true,
+      "diversityWeight": 0.7,
+      "preferThreadFriendly": false
+    }
+  }
+}
+```
+
+- **enabled** — Turn strategy system on/off
+- **autoSelect** — Automatically select strategies based on content (vs. random)
+- **diversityWeight** — How much to prioritize category diversity (0.0 = no preference, 1.0 = maximum diversity)
+- **preferThreadFriendly** — Favor strategies that work well in threads
+
+### Benefits
+
+**Variety** — Never run out of angles. 75 strategies ensure fresh approaches to your content.
+
+**Quality** — Proven formats that have driven engagement on social media.
+
+**Control** — Full control over which strategies to use, or let the system auto-select intelligently.
+
+**Tracking** — Strategy metadata in `posts.jsonl` lets you analyze which formats perform best.
+
+**Efficiency** — One transcript becomes 8+ diverse posts without manual rewriting.
+
+### Strategy Metadata
+
+Each post includes strategy metadata you can use for analysis:
+
+```bash
+# See which strategies generated your posts
+cat posts.jsonl | jq '{strategy: .metadata.strategy.name, score: .metadata.bangerScore, content: .content[:50]}'
+
+# Group by strategy category
+cat posts.jsonl | jq -r '.metadata.strategy.category' | sort | uniq -c
+
+# Find your best-performing strategy
+cat posts.jsonl | jq -r 'select(.metadata.bangerScore > 70) | .metadata.strategy.name' | sort | uniq -c | sort -rn
+```
 
 ## Getting Transcripts from Granola
 
@@ -375,6 +556,7 @@ All prompts used by t2p are stored as editable files in the `prompts/` directory
 **Advanced prompts** (optional, for power users):
 - `prompts/system.md` - System prompt wrapper for post generation
 - `prompts/analysis.md` - Prompt used to analyze your X posts and generate style guides
+- `prompts/content-analysis.md` - Criteria for analyzing transcript content and selecting strategies
 - `prompts/banger-eval.md` - Scoring criteria for evaluating viral potential
 
 ### Why User-Editable Prompts?
@@ -434,6 +616,15 @@ All prompts used by t2p are stored as editable files in the `prompts/` directory
 - Process files in batches to avoid overloading Ollama
 - Use `--verbose` to debug slow or failing generations
 - Adjust `temperature` in config for creativity vs consistency
+
+**Content Strategies**
+- Let auto-selection work its magic for most transcripts (it's intelligent!)
+- Use `--list-strategies` to explore available formats
+- Try manual strategy selection when you know exactly what format you want
+- Analyze which strategies perform best using banger scores and engagement data
+- Use `--count 12` for longer transcripts to get more variety
+- Experiment with `diversityWeight` config (higher = more category diversity)
+- Review strategy metadata to identify patterns in your best-performing posts
 
 ## Troubleshooting
 

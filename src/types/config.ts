@@ -7,6 +7,12 @@ export interface T2pConfig {
   generation: {
     postsPerTranscript?: number;
     temperature?: number;
+    strategies?: {
+      enabled?: boolean;
+      autoSelect?: boolean;
+      diversityWeight?: number;
+      preferThreadFriendly?: boolean;
+    };
   };
   x?: {
     clientId?: string;
@@ -20,7 +26,13 @@ export const DEFAULT_CONFIG: T2pConfig = {
     timeout: 60000,
   },
   generation: {
-    postsPerTranscript: 5,
+    postsPerTranscript: 8,
     temperature: 0.7,
+    strategies: {
+      enabled: true,
+      autoSelect: true,
+      diversityWeight: 0.7,
+      preferThreadFriendly: false,
+    },
   },
 };

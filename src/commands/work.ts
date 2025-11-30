@@ -2,16 +2,25 @@ import { readdirSync, readFileSync, statSync } from 'fs';
 import { join, relative } from 'path';
 import { FileSystemService } from '../services/file-system.js';
 import { OllamaService } from '../services/ollama.js';
+import { ContentAnalyzer } from '../services/content-analyzer.js';
+import { StrategySelector } from '../services/strategy-selector.js';
 import { logger } from '../utils/logger.js';
 import { isT2pProject } from '../utils/validation.js';
 import { NotInitializedError } from '../utils/errors.js';
 import { buildBangerEvalPrompt, parseBangerEval } from '../utils/banger-eval.js';
 import type { PostGenerationResult } from '../types/post.js';
+import type { StrategyCategory } from '../types/strategy.js';
 
 interface WorkOptions {
   model?: string;
   verbose?: boolean;
   force?: boolean;
+  count?: number;
+  strategy?: string;
+  strategies?: string;
+  listStrategies?: boolean;
+  category?: string;
+  noStrategies?: boolean;
 }
 
 function buildPrompt(systemPrompt: string, styleGuide: string, workInstructions: string, transcript: string): string {
@@ -70,8 +79,80 @@ function findInputFiles(inputDir: string): string[] {
   }
 }
 
+function buildStrategyPrompt(
+  systemPrompt: string,
+  styleGuide: string,
+  workInstructions: string,
+  strategyPrompt: string,
+  transcript: string
+): string {
+  return `${systemPrompt}
+
+STYLE GUIDE:
+${styleGuide}
+
+INSTRUCTIONS:
+${workInstructions}
+
+CONTENT STRATEGY FOR THIS POST:
+${strategyPrompt}
+
+TRANSCRIPT TO PROCESS:
+${transcript}
+
+Generate a SINGLE post following the strategy above.`;
+}
+
+function listStrategiesCommand(options: WorkOptions): void {
+  const selector = new StrategySelector();
+  const strategies = options.category
+    ? selector.getStrategiesByCategory(options.category as StrategyCategory)
+    : selector.getAllStrategies();
+
+  if (strategies.length === 0) {
+    logger.error(`No strategies found${options.category ? ` for category: ${options.category}` : ''}`);
+    process.exit(1);
+  }
+
+  logger.blank();
+  logger.success(`Available Content Strategies (${strategies.length})`);
+  logger.blank();
+
+  // Group by category
+  const byCategory = new Map<StrategyCategory, typeof strategies>();
+  for (const strategy of strategies) {
+    if (!byCategory.has(strategy.category)) {
+      byCategory.set(strategy.category, []);
+    }
+    byCategory.get(strategy.category)!.push(strategy);
+  }
+
+  // Display by category
+  for (const [category, categoryStrategies] of byCategory) {
+    logger.info(`\n${category.toUpperCase()}:`);
+    for (const strategy of categoryStrategies) {
+      const threadMarker = strategy.threadFriendly ? ' 🧵' : '';
+      logger.info(`  ${strategy.id}${threadMarker}`);
+      logger.info(`    ${strategy.name}`);
+    }
+  }
+
+  logger.blank();
+  logger.info('Usage:');
+  logger.info('  t2p work --strategy <id>           # Use specific strategy');
+  logger.info('  t2p work --strategies <id1,id2>    # Use multiple strategies');
+  logger.info('  t2p work                            # Auto-select strategies');
+  logger.blank();
+}
+
 export async function workCommand(options: WorkOptions): Promise<void> {
   const cwd = process.cwd();
+
+  // Handle --list-strategies early exit
+  if (options.listStrategies) {
+    listStrategiesCommand(options);
+    return;
+  }
 
   try {
     const fs = new FileSystemService(cwd);
@@ -112,6 +193,26 @@ export async function workCommand(options: WorkOptions): Promise<void> {
 
   const bangerEvalTemplate = fs.loadPrompt('banger-eval.md');
   logger.success('Loaded banger evaluation prompt');
+
+  // Load content analysis template (for strategy selection)
+  const analysisTemplate = fs.fileExists(join(cwd, 'prompts', 'content-analysis.md'))
+    ? fs.loadPrompt('content-analysis.md')
+    : '';
+
+  // Initialize strategy services
+  const contentAnalyzer = analysisTemplate ? new ContentAnalyzer(ollama, analysisTemplate) : null;
+  const strategySelector = new StrategySelector(
+    config.generation.strategies?.diversityWeight || 0.7
+  );
+
+  // Determine strategy configuration
+  const strategiesEnabled =
+    !options.noStrategies && (config.generation.strategies?.enabled !== false);
+  const postCount = options.count || config.generation.postsPerTranscript || 8;
+
+  if (strategiesEnabled && options.verbose) {
+    logger.info(`Strategy-based generation enabled (${postCount} posts per file)`);
+  }
 
   const inputFiles = findInputFiles(join(cwd, 'input'));
   if (inputFiles.length === 0) {
@@ -156,64 +257,174 @@ export async function workCommand(options: WorkOptions): Promise<void> {
         continue;
       }
 
-      // Build prompt
-      const prompt = buildPrompt(systemPrompt, styleGuide, workInstructions, transcript);
+      let postsGenerated = 0;
 
-      if (options.verbose) {
-        logger.info(`  Prompt length: ${prompt.length} characters`);
-      }
+      // Strategy-based generation
+      if (strategiesEnabled) {
+        // Determine which strategies to use
+        let selectedStrategies;
 
-      // Generate posts
-      const response = await ollama.generate(prompt);
-
-      if (options.verbose) {
-        logger.info(`  Response length: ${response.length} characters`);
-      }
-
-      // Parse response
-      const posts = parsePostsFromResponse(response);
-
-      if (posts.length === 0) {
-        logger.info('  Generated 0 posts (parsing failed)');
-        totalErrors++;
-        continue;
-      }
-
-      // Evaluate and save posts
-      for (const postData of posts) {
-        const post = fs.createPost(
-          relativePath,
-          postData.content,
-          ollama.getModelName(),
-          ollama.getTemperature()
-        );
-
-        // Evaluate banger potential
-        try {
-          const evalPrompt = buildBangerEvalPrompt(bangerEvalTemplate, postData.content);
-          const evalResponse = await ollama.generate(evalPrompt);
-          const evaluation = parseBangerEval(evalResponse);
-
-          if (evaluation) {
-            post.metadata.bangerScore = evaluation.score;
-            post.metadata.bangerEvaluation = evaluation;
+        if (options.strategy) {
+          // Manual single strategy selection
+          selectedStrategies = strategySelector.getStrategiesByIds([options.strategy]);
+          if (selectedStrategies.length === 0) {
+            logger.info(`  No strategy found with ID: ${options.strategy}`);
+            totalErrors++;
+            continue;
           }
-        } catch (evalError) {
-          // Continue without score if evaluation fails
-          if (options.verbose) {
-            logger.info(`    Failed to evaluate banger score: ${(evalError as Error).message}`);
+        } else if (options.strategies) {
+          // Manual multiple strategy selection
+          const ids = options.strategies.split(',').map((s) => s.trim());
+          selectedStrategies = strategySelector.getStrategiesByIds(ids);
+          if (selectedStrategies.length === 0) {
+            logger.info(`  No strategies found for IDs: ${options.strategies}`);
+            totalErrors++;
+            continue;
+          }
+        } else {
+          // Auto-select strategies based on content analysis
+          if (contentAnalyzer) {
+            if (options.verbose) {
+              logger.info('  Analyzing content...');
+            }
+
+            const analysis = await contentAnalyzer.analyzeTranscript(transcript);
+
+            if (options.verbose) {
+              logger.info(`  Content types: ${analysis.contentTypes.join(', ')}`);
+            }
+
+            selectedStrategies = strategySelector.selectStrategies(
+              analysis,
+              postCount,
+              config.generation.strategies?.preferThreadFriendly || false
+            );
+          } else {
+            // No analyzer available, use general-purpose strategies
+            selectedStrategies = strategySelector.getAllStrategies().slice(0, postCount);
           }
         }
 
-        fs.appendPost(post);
+        if (options.verbose) {
+          logger.info(`  Selected ${selectedStrategies.length} strategies`);
+        }
+
+        // Generate one post per strategy
+        for (const strategy of selectedStrategies) {
+          try {
+            const strategyPrompt = buildStrategyPrompt(
+              systemPrompt,
+              styleGuide,
+              workInstructions,
+              strategy.prompt,
+              transcript
+            );
+
+            const response = await ollama.generate(strategyPrompt);
+
+            // Parse single post from response
+            const posts = parsePostsFromResponse(response);
+
+            if (posts.length > 0) {
+              const postData = posts[0]; // Take first post
+
+              const post = fs.createPost(
+                relativePath,
+                postData.content,
+                ollama.getModelName(),
+                ollama.getTemperature()
+              );
+
+              // Add strategy metadata
+              post.metadata.strategy = {
+                id: strategy.id,
+                name: strategy.name,
+                category: strategy.category,
+              };
+
+              // Evaluate banger potential
+              try {
+                const evalPrompt = buildBangerEvalPrompt(bangerEvalTemplate, postData.content);
+                const evalResponse = await ollama.generate(evalPrompt);
+                const evaluation = parseBangerEval(evalResponse);
+
+                if (evaluation) {
+                  post.metadata.bangerScore = evaluation.score;
+                  post.metadata.bangerEvaluation = evaluation;
+                }
+              } catch (evalError) {
+                if (options.verbose) {
+                  logger.info(`    Failed to evaluate banger score: ${(evalError as Error).message}`);
+                }
+              }
+
+              fs.appendPost(post);
+              postsGenerated++;
+            }
+          } catch (stratError) {
+            if (options.verbose) {
+              logger.info(`    Failed with strategy ${strategy.id}: ${(stratError as Error).message}`);
+            }
+          }
+        }
+      } else {
+        // Legacy generation (no strategies)
+        const prompt = buildPrompt(systemPrompt, styleGuide, workInstructions, transcript);
+
+        if (options.verbose) {
+          logger.info(`  Prompt length: ${prompt.length} characters`);
+        }
+
+        const response = await ollama.generate(prompt);
+
+        if (options.verbose) {
+          logger.info(`  Response length: ${response.length} characters`);
+        }
+
+        const posts = parsePostsFromResponse(response);
+
+        if (posts.length === 0) {
+          logger.info('  Generated 0 posts (parsing failed)');
+          totalErrors++;
+          continue;
+        }
+
+        // Evaluate and save posts
+        for (const postData of posts) {
+          const post = fs.createPost(
+            relativePath,
+            postData.content,
+            ollama.getModelName(),
+            ollama.getTemperature()
+          );
+
+          // Evaluate banger potential
+          try {
+            const evalPrompt = buildBangerEvalPrompt(bangerEvalTemplate, postData.content);
+            const evalResponse = await ollama.generate(evalPrompt);
+            const evaluation = parseBangerEval(evalResponse);
+
+            if (evaluation) {
+              post.metadata.bangerScore = evaluation.score;
+              post.metadata.bangerEvaluation = evaluation;
+            }
+          } catch (evalError) {
+            if (options.verbose) {
+              logger.info(`    Failed to evaluate banger score: ${(evalError as Error).message}`);
+            }
+          }
+
+          fs.appendPost(post);
+          postsGenerated++;
+        }
       }
 
-      logger.info(`  Generated ${posts.length} posts`);
+      logger.info(`  Generated ${postsGenerated} posts`);
       totalProcessed++;
-      totalGenerated += posts.length;
+      totalGenerated += postsGenerated;
 
       // Mark file as processed
-      state = fs.markFileProcessed(filePath, posts.length, state);
+      state = fs.markFileProcessed(filePath, postsGenerated, state);
     } catch (error) {
       logger.error(`  Failed: ${(error as Error).message}`);
       totalErrors++;

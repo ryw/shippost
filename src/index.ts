@@ -32,6 +32,12 @@ program
   .option('-m, --model <model>', 'Override Ollama model')
   .option('-v, --verbose', 'Verbose output')
   .option('-f, --force', 'Force reprocessing of all files (bypass tracking)')
+  .option('-c, --count <number>', 'Number of posts to generate per file', parseInt)
+  .option('-s, --strategy <id>', 'Use specific strategy by ID')
+  .option('--strategies <ids>', 'Use multiple strategies (comma-separated)')
+  .option('--list-strategies', 'List all available strategies')
+  .option('--category <category>', 'Filter strategies by category (with --list-strategies)')
+  .option('--no-strategies', 'Disable strategy-based generation (use legacy mode)')
   .action(workCommand);
 
 program
