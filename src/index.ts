@@ -17,7 +17,7 @@ const program = new Command();
 
 program
   .name('t2p')
-  .description('Process meeting transcripts into social media post ideas')
+  .description('Process meeting transcripts and other notes into social media post drafts')
   .version(packageJson.version);
 
 program

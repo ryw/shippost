@@ -1,6 +1,6 @@
 # t2p
 
-> **transcripts → posts**: Transform meeting transcripts into engaging social media content using local LLMs.
+> **transcripts → posts**: Transform meeting transcripts and other notes into social media post drafts using local LLMs.
 
 ## Overview
 
