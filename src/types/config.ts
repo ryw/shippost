@@ -8,6 +8,9 @@ export interface T2pConfig {
     postsPerTranscript?: number;
     temperature?: number;
   };
+  x?: {
+    clientId?: string;
+  };
 }
 
 export const DEFAULT_CONFIG: T2pConfig = {

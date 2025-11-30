@@ -10,6 +10,7 @@ t2p is a CLI tool that processes meeting transcripts, notes, and other written c
 
 - ✅ **Local LLM Processing** — Uses Ollama for privacy-first content generation
 - ✅ **Customizable Style** — Define your brand voice and posting style
+- ✅ **X Post Analysis** — Auto-generate style guides from your X (Twitter) posts
 - ✅ **JSONL Output** — Generated posts stored in an append-only format for easy tracking
 - ✅ **Multiple File Processing** — Batch process all transcripts in one command
 - ⏳ **Typefully Integration** — Stage posts directly to Typefully drafts (coming soon)
@@ -100,6 +101,55 @@ t2p work --model llama2 --verbose
 4. Processes each file through Ollama
 5. Parses generated posts and saves to `posts.jsonl`
 6. Displays summary with file counts and any errors
+
+### `t2p analyze-x`
+
+Generate a personalized style guide by analyzing your X (Twitter) posts. Uses X API v2 (free tier) to fetch your recent tweets and Ollama to analyze your writing patterns.
+
+**Options:**
+- `--count <n>` — Number of tweets to fetch (default: 100, max: 100)
+- `--overwrite` — Overwrite existing style.md without prompting
+- `--setup` — Reconfigure X API credentials
+
+```bash
+# First time setup (will prompt for X API credentials)
+t2p analyze-x
+
+# Fetch fewer tweets
+t2p analyze-x --count 50
+
+# Overwrite existing style guide
+t2p analyze-x --overwrite
+
+# Reconfigure X API credentials
+t2p analyze-x --setup
+```
+
+**What it does:**
+1. Configures X API OAuth 2.0 authentication (first time only)
+2. Opens browser for you to authorize the app
+3. Fetches your recent tweets (up to 100)
+4. Analyzes writing patterns with Ollama
+5. Generates and saves a personalized style guide to `prompts/style.md`
+
+**Requirements:**
+- Free X Developer account ([sign up here](https://developer.x.com/))
+- X API app with OAuth 2.0 enabled
+- Redirect URI set to: `http://127.0.0.1:3000/callback`
+- Required scopes: `tweet.read`, `users.read`, `offline.access`
+
+**First-time setup:**
+1. Visit [X Developer Portal](https://developer.x.com/en/portal/dashboard)
+2. Create a new app (or use existing)
+3. Enable OAuth 2.0 in app settings
+4. Set redirect URI to `http://127.0.0.1:3000/callback`
+5. Copy your Client ID
+6. Run `t2p analyze-x` and paste Client ID when prompted
+
+**Rate limits:**
+- X API Free tier: 100 reads/month
+- Can analyze once per month with free tier
+- Upgrade to Basic ($200/month) for 10,000 reads if needed
 
 ### `t2p stage <n>` *(coming soon)*
 
@@ -361,12 +411,12 @@ This project uses [bd (beads)](https://github.com/steveyegge/beads) for issue tr
 **Core Features (v0.1.0)**
 - [x] `t2p init` — Initialize project structure
 - [x] `t2p work` — Process transcripts into posts with Ollama
+- [x] `t2p analyze-x` — Generate style guide from your X posts (X API v2 free tier)
 - [x] Configurable models and generation settings
 - [x] JSONL output format with full metadata
 
 **Planned Features**
 - [ ] `t2p stage <n>` — Typefully integration for staging posts
-- [ ] `t2p analyze x` — Generate style guide from your X posts (X free API)
 - [ ] `t2p analyze` — Success metrics analysis (X Basic API, $200/mo)
 - [ ] News-aware post generation (incorporate trending topics)
 - [ ] LinkedIn support

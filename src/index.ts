@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { initCommand } from './commands/init.js';
 import { workCommand } from './commands/work.js';
+import { analyzeXCommand } from './commands/analyze-x.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -31,5 +32,13 @@ program
   .option('-m, --model <model>', 'Override Ollama model')
   .option('-v, --verbose', 'Verbose output')
   .action(workCommand);
+
+program
+  .command('analyze-x')
+  .description('Generate style guide from your X (Twitter) posts')
+  .option('--count <n>', 'Number of tweets to fetch (max 100)', parseInt, 100)
+  .option('--overwrite', 'Overwrite existing style.md without prompting')
+  .option('--setup', 'Reconfigure X API credentials')
+  .action(analyzeXCommand);
 
 program.parse();

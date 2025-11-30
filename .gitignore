@@ -22,6 +22,9 @@ Thumbs.db
 .env
 .env.local
 
+# OAuth tokens (sensitive)
+.t2p-tokens.json
+
 # Testing
 coverage/
 
