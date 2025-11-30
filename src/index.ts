@@ -5,6 +5,7 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { initCommand } from './commands/init.js';
+import { workCommand } from './commands/work.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -23,5 +24,12 @@ program
   .command('init')
   .description('Initialize a new t2p project in the current directory')
   .action(initCommand);
+
+program
+  .command('work')
+  .description('Process input files and generate social media posts')
+  .option('-m, --model <model>', 'Override Ollama model')
+  .option('-v, --verbose', 'Verbose output')
+  .action(workCommand);
 
 program.parse();
