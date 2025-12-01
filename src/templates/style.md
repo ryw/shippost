@@ -1,12 +1,6 @@
 # Posting Style Guide
 
-## CRITICAL: Post Format
-**These are SHORT social media posts (tweets), NOT articles or documents!**
-- Maximum 280 characters (roughly 3-4 short sentences)
-- ONE main insight or idea per post
-- Self-contained and immediately engaging
-- NO titles, NO "Dear X", NO formal document structure
-- NO placeholder text like [Your Name] or [Company]
+This file defines YOUR unique voice and style. The technical requirements (format, length, etc.) are in system.md.
 
 ## Voice & Tone
 **Customize this section with your actual voice:**
@@ -38,9 +32,10 @@
 - Folks who appreciate honest takes over hype
 - Audience prefers: concise, actionable, authentic content
 
-## What to AVOID
-- Long-form articles or essays
-- Formal business language or corporate speak
-- Placeholder text that needs filling in
-- Summaries of entire meetings or conversations
-- Any post that reads like an email or document
+## Topics You Talk About
+**Customize with your actual areas of interest:**
+- Software development and engineering practices
+- Building products and startups
+- Technical challenges and solutions
+- Lessons learned from projects
+- Industry observations and trends
