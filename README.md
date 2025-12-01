@@ -755,10 +755,10 @@ When using Ollama:
 - Experiment with different models using `--model` flag
 
 When using Anthropic Claude:
-- `claude-sonnet-4-5-20250929` — Latest Claude 4.5 Sonnet, highest intelligence and reasoning
-- `claude-3-5-sonnet-20241022` (default) — Best balance of intelligence, speed, and cost
-- `claude-3-opus-20240229` — Most capable Claude 3 model, best for complex tasks
-- `claude-3-haiku-20240307` — Fastest and most cost-effective
+- `claude-sonnet-4-5-20250929` — Smartest model for complex agents and coding (recommended)
+- `claude-haiku-4-5-20251001` — Fastest model with near-frontier intelligence
+- `claude-opus-4-5-20251101` — Premium model combining maximum intelligence with practical performance
+- `claude-opus-4-1-20250805` — Exceptional for specialized reasoning tasks
 - See [ANTHROPIC_SETUP.md](ANTHROPIC_SETUP.md) for pricing details
 
 **Output Management**
