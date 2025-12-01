@@ -23,7 +23,7 @@ This directory contains style.md examples contributed by the t2p community. Use 
 3. **Submit a PR**:
    ```bash
    git checkout -b add-style-example-yourname
-   git add community-examples/styles/your-name.md
+   git add community-examples/style/your-name.md
    git commit -m "Add style example: Your Name"
    git push origin add-style-example-yourname
    ```

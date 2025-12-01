@@ -657,7 +657,7 @@ All prompts used by t2p are stored as editable files in the `prompts/` directory
 
 ## Community Style Examples
 
-Learn from real-world examples! The `community-examples/styles/` directory contains style.md files contributed by the t2p community. Browse these to:
+Learn from real-world examples! The `community-examples/style/` directory contains style.md files contributed by the t2p community. Browse these to:
 
 - See how others define their voice and tone
 - Discover different writing styles (casual, professional, humorous, etc.)
@@ -668,13 +668,13 @@ Learn from real-world examples! The `community-examples/styles/` directory conta
 
 ```bash
 # Browse available examples
-ls community-examples/styles/
+ls community-examples/style/
 
 # Read an example
-cat community-examples/styles/example-technical-founder.md
+cat community-examples/style/example-technical-founder.md
 
 # Copy as starting point for your style
-cp community-examples/styles/example-technical-founder.md prompts/style.md
+cp community-examples/style/example-technical-founder.md prompts/style.md
 # Then customize it with your own voice!
 ```
 
@@ -682,12 +682,12 @@ cp community-examples/styles/example-technical-founder.md prompts/style.md
 
 Have a style.md you're proud of? Share it with the community!
 
-1. Copy your `prompts/style.md` to `community-examples/styles/your-name.md`
+1. Copy your `prompts/style.md` to `community-examples/style/your-name.md`
 2. Remove any private/sensitive information
 3. Add a comment at the top with context (target audience, niche, what makes it unique)
 4. Submit a PR
 
-See `community-examples/styles/README.md` for full contribution guidelines.
+See `community-examples/style/README.md` for full contribution guidelines.
 
 **Why contribute?**
 - Help others learn from your experience
