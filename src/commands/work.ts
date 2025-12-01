@@ -345,9 +345,17 @@ export async function workCommand(options: WorkOptions): Promise<void> {
           logger.info(`  Selected ${selectedStrategies.length} strategies`);
         }
 
+        logger.info(`  Generating ${selectedStrategies.length} posts...`);
+
         // Generate one post per strategy
-        for (const strategy of selectedStrategies) {
+        for (let i = 0; i < selectedStrategies.length; i++) {
+          const strategy = selectedStrategies[i];
+          const progress = `[${i + 1}/${selectedStrategies.length}]`;
+
           try {
+            // Show which strategy is being processed
+            logger.info(`  ${progress} ${strategy.name}...`);
+
             const strategyPrompt = buildStrategyPrompt(
               systemPrompt,
               styleGuide,
@@ -387,24 +395,39 @@ export async function workCommand(options: WorkOptions): Promise<void> {
                 if (evaluation) {
                   post.metadata.bangerScore = evaluation.score;
                   post.metadata.bangerEvaluation = evaluation;
+
+                  // Show banger score if available
+                  if (options.verbose) {
+                    logger.info(`    ✓ Generated (banger: ${evaluation.score}/10)`);
+                  }
                 }
               } catch (evalError) {
                 if (options.verbose) {
-                  logger.info(`    Failed to evaluate banger score: ${(evalError as Error).message}`);
+                  logger.info(`    ✓ Generated (banger eval failed)`);
                 }
               }
 
               fs.appendPost(post);
               postsGenerated++;
+
+              // Show completion without verbose
+              if (!options.verbose) {
+                logger.success(`  ${progress} ✓ Complete`);
+              }
+            } else {
+              logger.info(`  ${progress} ✗ No valid post generated`);
             }
           } catch (stratError) {
+            logger.info(`  ${progress} ✗ Failed: ${(stratError as Error).message}`);
             if (options.verbose) {
-              logger.info(`    Failed with strategy ${strategy.id}: ${(stratError as Error).message}`);
+              logger.info(`    Strategy: ${strategy.id}`);
             }
           }
         }
       } else {
         // Legacy generation (no strategies)
+        logger.info(`  Generating posts (legacy mode)...`);
+
         const prompt = buildPrompt(systemPrompt, styleGuide, workInstructions, transcript);
 
         if (options.verbose) {
@@ -420,13 +443,21 @@ export async function workCommand(options: WorkOptions): Promise<void> {
         const posts = parsePostsFromResponse(response);
 
         if (posts.length === 0) {
-          logger.info('  Generated 0 posts (parsing failed)');
+          logger.info('  ✗ Generated 0 posts (parsing failed)');
           totalErrors++;
           continue;
         }
 
+        logger.info(`  Generated ${posts.length} posts, evaluating...`);
+
         // Evaluate and save posts
-        for (const postData of posts) {
+        for (let i = 0; i < posts.length; i++) {
+          const postData = posts[i];
+          const progress = `[${i + 1}/${posts.length}]`;
+
+          if (options.verbose) {
+            logger.info(`  ${progress} Evaluating post...`);
+          }
           const post = fs.createPost(
             relativePath,
             postData.content,
@@ -443,16 +474,22 @@ export async function workCommand(options: WorkOptions): Promise<void> {
             if (evaluation) {
               post.metadata.bangerScore = evaluation.score;
               post.metadata.bangerEvaluation = evaluation;
+
+              if (options.verbose) {
+                logger.info(`  ${progress} ✓ Saved (banger: ${evaluation.score}/10)`);
+              }
             }
           } catch (evalError) {
             if (options.verbose) {
-              logger.info(`    Failed to evaluate banger score: ${(evalError as Error).message}`);
+              logger.info(`  ${progress} ✓ Saved (banger eval failed)`);
             }
           }
 
           fs.appendPost(post);
           postsGenerated++;
         }
+
+        logger.success(`  ✓ Saved ${posts.length} posts`);
       }
 
       logger.info(`  Generated ${postsGenerated} posts`);
