@@ -52,6 +52,7 @@ program
   .option('--strategy <name>', 'Filter by strategy name or ID')
   .option('--min-score <score>', 'Show posts with banger score >= N', parseInt)
   .option('--source <text>', 'Filter by source file')
+  .option('--eval', 'Evaluate posts missing banger scores')
   .action(postsCommand);
 
 program

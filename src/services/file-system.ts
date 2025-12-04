@@ -125,6 +125,17 @@ export class FileSystemService {
     }
   }
 
+  writePosts(posts: Post[]): void {
+    const postsPath = join(this.cwd, 'posts.jsonl');
+
+    try {
+      const content = posts.map((post) => JSON.stringify(post)).join('\n') + '\n';
+      writeFileSync(postsPath, content, 'utf-8');
+    } catch (error) {
+      throw new FileSystemError(`Failed to write posts: ${(error as Error).message}`);
+    }
+  }
+
   createPost(sourceFile: string, content: string, model: string, temperature: number): Post {
     return {
       id: randomUUID(),

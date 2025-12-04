@@ -2,6 +2,8 @@ import { FileSystemService } from '../services/file-system.js';
 import { logger } from '../utils/logger.js';
 import { isT2pProject } from '../utils/validation.js';
 import { NotInitializedError } from '../utils/errors.js';
+import { createLLMService } from '../services/llm-factory.js';
+import { buildBangerEvalPrompt, parseBangerEval } from '../utils/banger-eval.js';
 import type { Post } from '../types/post.js';
 
 interface PostsOptions {
@@ -9,6 +11,7 @@ interface PostsOptions {
   strategy?: string;
   minScore?: number;
   source?: string;
+  eval?: boolean;
 }
 
 function formatTimestamp(timestamp: string): string {
@@ -66,6 +69,92 @@ function displayPost(post: Post, index: number, total: number): void {
   }
 }
 
+async function evaluateMissingScores(
+  cwd: string,
+  fs: FileSystemService,
+  posts: Post[]
+): Promise<void> {
+  const postsWithoutScore = posts.filter((p) => !p.metadata.bangerScore);
+
+  if (postsWithoutScore.length === 0) {
+    logger.success('All posts already have banger scores!');
+    return;
+  }
+
+  logger.blank();
+  logger.info(`Found ${postsWithoutScore.length} posts without banger scores`);
+  logger.info('Evaluating...');
+  logger.blank();
+
+  // Load config and create LLM service
+  const config = fs.loadConfig();
+  const llm = createLLMService(config);
+
+  // Load banger eval prompt
+  let bangerEvalTemplate: string;
+  try {
+    bangerEvalTemplate = fs.loadPrompt('banger-eval.md');
+  } catch {
+    logger.error('Missing prompts/banger-eval.md - run t2p init to create it');
+    return;
+  }
+
+  let evaluated = 0;
+  let failed = 0;
+
+  for (const post of postsWithoutScore) {
+    const progress = `[${evaluated + failed + 1}/${postsWithoutScore.length}]`;
+
+    try {
+      const evalPrompt = buildBangerEvalPrompt(bangerEvalTemplate, post.content);
+      const evalResponse = await llm.generate(evalPrompt);
+      const evaluation = parseBangerEval(evalResponse);
+
+      if (evaluation) {
+        post.metadata.bangerScore = evaluation.score;
+        post.metadata.bangerEvaluation = evaluation;
+        evaluated++;
+
+        const scoreEmoji = evaluation.score >= 70 ? '🔥' : evaluation.score >= 50 ? '✨' : '📝';
+        logger.success(`${progress} ${scoreEmoji} Score: ${evaluation.score}/99`);
+
+        // Show snippet of post
+        const snippet = post.content.substring(0, 60).replace(/\n/g, ' ');
+        logger.info(`    "${snippet}..."`);
+      } else {
+        failed++;
+        logger.error(`${progress} Failed to parse evaluation`);
+      }
+    } catch (error) {
+      failed++;
+      logger.error(`${progress} Error: ${(error as Error).message}`);
+    }
+  }
+
+  // Rewrite posts.jsonl with updated scores
+  if (evaluated > 0) {
+    fs.writePosts(posts);
+    logger.blank();
+    logger.success(`Updated ${evaluated} posts with banger scores`);
+  }
+
+  if (failed > 0) {
+    logger.error(`Failed to evaluate ${failed} posts`);
+  }
+
+  // Show summary stats
+  const allScored = posts.filter((p) => p.metadata.bangerScore);
+  if (allScored.length > 0) {
+    const avgScore =
+      allScored.reduce((sum, p) => sum + (p.metadata.bangerScore || 0), 0) / allScored.length;
+    logger.blank();
+    logger.info(`📊 Average banger score: ${avgScore.toFixed(1)}/99`);
+
+    const highQuality = allScored.filter((p) => (p.metadata.bangerScore || 0) >= 70);
+    logger.info(`🔥 High potential posts (70+): ${highQuality.length}`);
+  }
+}
+
 export async function postsCommand(options: PostsOptions): Promise<void> {
   const cwd = process.cwd();
   const fs = new FileSystemService(cwd);
@@ -81,6 +170,12 @@ export async function postsCommand(options: PostsOptions): Promise<void> {
 
     if (posts.length === 0) {
       logger.info('No posts found. Run `t2p work` to generate posts.');
+      return;
+    }
+
+    // Handle --eval flag: evaluate posts missing banger scores
+    if (options.eval) {
+      await evaluateMissingScores(cwd, fs, posts);
       return;
     }
 
