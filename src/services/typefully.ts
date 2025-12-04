@@ -1,4 +1,4 @@
-const TYPEFULLY_API_URL = 'https://api.typefully.com/v1';
+const TYPEFULLY_API_URL = 'https://api.typefully.com/v2';
 
 export interface TypefullyDraftResponse {
   id: string;
@@ -27,7 +27,7 @@ export class TypefullyService {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-API-KEY': this.apiKey,
+        'Authorization': `Bearer ${this.apiKey}`,
       },
       body: JSON.stringify({
         content,
