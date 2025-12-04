@@ -20,17 +20,23 @@ export class TypefullyService {
   }
 
   /**
-   * Create a draft in Typefully
+   * Create a draft in Typefully (X/Twitter only)
    */
   async createDraft(content: string): Promise<TypefullyDraftResponse> {
-    const response = await fetch(`${TYPEFULLY_API_URL}/drafts/`, {
+    const response = await fetch(`${TYPEFULLY_API_URL}/social-sets/1/drafts`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${this.apiKey}`,
       },
       body: JSON.stringify({
-        content,
+        platforms: {
+          x: {
+            enabled: true,
+            posts: [{ text: content }],
+            settings: {},
+          },
+        },
         share: true,
       }),
     });
