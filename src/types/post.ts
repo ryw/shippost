@@ -29,11 +29,10 @@ export interface Post {
       name: string;
       category: string;
     };
-    reviewStatus?: 'keep' | 'reject';
-    reviewedAt?: string;
+    typefullyDraftId?: string;
   };
   timestamp: string;
-  status: 'draft' | 'staged' | 'published' | 'rejected';
+  status: 'new' | 'keep' | 'staged' | 'published' | 'rejected';
 }
 
 export interface PostGenerationResult {

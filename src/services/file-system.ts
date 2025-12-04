@@ -146,7 +146,7 @@ export class FileSystemService {
         temperature,
       },
       timestamp: new Date().toISOString(),
-      status: 'draft',
+      status: 'new',
     };
   }
 

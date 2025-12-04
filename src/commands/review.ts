@@ -1,5 +1,6 @@
 import { createInterface } from 'readline';
 import { FileSystemService } from '../services/file-system.js';
+import { TypefullyService } from '../services/typefully.js';
 import { logger } from '../utils/logger.js';
 import { isT2pProject } from '../utils/validation.js';
 import { NotInitializedError } from '../utils/errors.js';
@@ -9,9 +10,7 @@ interface ReviewOptions {
   minScore?: number;
 }
 
-function displayPostForReview(post: Post, index: number, total: number): void {
-  const remaining = total - index;
-
+function displayPostForReview(post: Post, remaining: number): void {
   logger.blank();
 
   // Header with progress and score
@@ -35,28 +34,28 @@ function displayPostForReview(post: Post, index: number, total: number): void {
   logger.info('  ' + '─'.repeat(70));
 }
 
-async function promptForDecision(): Promise<'keep' | 'reject' | 'skip' | 'quit'> {
+async function promptForDecision(): Promise<'stage' | 'keep' | 'reject' | 'quit'> {
   return new Promise((resolve) => {
     const rl = createInterface({
       input: process.stdin,
       output: process.stdout,
     });
 
-    rl.question('\nEnter=keep / n=reject / s=skip / q=quit: ', (answer) => {
+    rl.question('\ns=stage (Typefully) / Enter=keep / n=reject / q=quit: ', (answer) => {
       rl.close();
       const trimmed = answer.trim().toLowerCase();
 
-      if (trimmed === '' || trimmed === 'k' || trimmed === 'y') {
+      if (trimmed === 's') {
+        resolve('stage');
+      } else if (trimmed === '' || trimmed === 'k' || trimmed === 'y') {
         resolve('keep');
       } else if (trimmed === 'n' || trimmed === 'r') {
         resolve('reject');
-      } else if (trimmed === 's') {
-        resolve('skip');
       } else if (trimmed === 'q') {
         resolve('quit');
       } else {
-        // Default to skip for unrecognized input
-        resolve('skip');
+        // Default to keep for unrecognized input
+        resolve('keep');
       }
     });
   });
@@ -65,6 +64,7 @@ async function promptForDecision(): Promise<'keep' | 'reject' | 'skip' | 'quit'>
 export async function reviewCommand(options: ReviewOptions): Promise<void> {
   const cwd = process.cwd();
   const fs = new FileSystemService(cwd);
+  let typefully: TypefullyService | null = null;
 
   try {
     // Check if initialized
@@ -80,8 +80,8 @@ export async function reviewCommand(options: ReviewOptions): Promise<void> {
       return;
     }
 
-    // Filter to unreviewed posts
-    let postsToReview = allPosts.filter((p) => !p.metadata.reviewStatus);
+    // Filter to new posts only
+    let postsToReview = allPosts.filter((p) => p.status === 'new');
 
     // Apply min score filter if specified
     if (options.minScore !== undefined) {
@@ -94,18 +94,18 @@ export async function reviewCommand(options: ReviewOptions): Promise<void> {
     postsToReview.sort((a, b) => (b.metadata.bangerScore || 0) - (a.metadata.bangerScore || 0));
 
     if (postsToReview.length === 0) {
-      const reviewed = allPosts.filter((p) => p.metadata.reviewStatus);
-      const kept = reviewed.filter((p) => p.metadata.reviewStatus === 'keep').length;
-      const rejected = reviewed.filter((p) => p.metadata.reviewStatus === 'reject').length;
+      const kept = allPosts.filter((p) => p.status === 'keep').length;
+      const staged = allPosts.filter((p) => p.status === 'staged').length;
+      const rejected = allPosts.filter((p) => p.status === 'rejected').length;
 
-      logger.success('All posts have been reviewed!');
-      logger.info(`  Kept: ${kept} • Rejected: ${rejected}`);
+      logger.success('No new posts to review!');
+      logger.info(`  Kept: ${kept} • Staged: ${staged} • Rejected: ${rejected}`);
       return;
     }
 
     // Show summary
     logger.blank();
-    logger.info(`Found ${postsToReview.length} posts to review`);
+    logger.info(`Found ${postsToReview.length} new posts to review`);
     if (options.minScore) {
       logger.info(`Filtered to posts with score >= ${options.minScore}`);
     }
@@ -114,32 +114,60 @@ export async function reviewCommand(options: ReviewOptions): Promise<void> {
     // Review loop
     let reviewed = 0;
     let kept = 0;
+    let staged = 0;
     let rejected = 0;
 
     for (let i = 0; i < postsToReview.length; i++) {
       const post = postsToReview[i];
+      const remaining = postsToReview.length - i;
 
-      displayPostForReview(post, i, postsToReview.length);
+      displayPostForReview(post, remaining);
 
       const decision = await promptForDecision();
 
       if (decision === 'quit') {
         logger.blank();
-        logger.info(`Session ended. Reviewed ${reviewed} posts (${kept} kept, ${rejected} rejected)`);
-        logger.info(`${postsToReview.length - i} posts remaining to review`);
+        logger.info(`Session ended. Reviewed ${reviewed} posts`);
+        logger.info(`  Staged: ${staged} • Kept: ${kept} • Rejected: ${rejected}`);
+        logger.info(`${remaining} posts remaining to review`);
         return;
       }
 
-      if (decision === 'skip') {
-        logger.step('Skipped');
-        continue;
+      // Update post status
+      if (decision === 'stage') {
+        post.status = 'staged';
+      } else if (decision === 'keep') {
+        post.status = 'keep';
+      } else {
+        post.status = 'rejected';
       }
 
-      // Update post metadata and status
-      post.metadata.reviewStatus = decision;
-      post.metadata.reviewedAt = new Date().toISOString();
-      if (decision === 'reject') {
-        post.status = 'rejected';
+      // If staging, send to Typefully
+      if (decision === 'stage') {
+        try {
+          // Lazy init Typefully service
+          if (!typefully) {
+            typefully = new TypefullyService();
+          }
+          const draft = await typefully.createDraft(post.content);
+          post.metadata.typefullyDraftId = draft.id;
+          staged++;
+          logger.success(`Staged → Typefully [${remaining - 1} remaining]`);
+          if (draft.share_url) {
+            logger.info(`  ${draft.share_url}`);
+          }
+        } catch (error) {
+          logger.error(`Failed to stage: ${(error as Error).message}`);
+          // Revert status on failure
+          post.status = 'new';
+          continue;
+        }
+      } else if (decision === 'keep') {
+        kept++;
+        logger.step(`Kept [${remaining - 1} remaining]`);
+      } else {
+        rejected++;
+        logger.error(`Rejected [${remaining - 1} remaining]`);
       }
 
       // Save immediately (find post in allPosts and update)
@@ -150,23 +178,12 @@ export async function reviewCommand(options: ReviewOptions): Promise<void> {
       }
 
       reviewed++;
-      if (decision === 'keep') {
-        kept++;
-        logger.success(`Kept [${postsToReview.length - i - 1} remaining]`);
-      } else {
-        rejected++;
-        logger.error(`Rejected [${postsToReview.length - i - 1} remaining]`);
-      }
     }
 
     // Final summary
     logger.blank();
     logger.success('Review complete!');
-    logger.info(`  Kept: ${kept} • Rejected: ${rejected}`);
-
-    const totalReviewed = allPosts.filter((p) => p.metadata.reviewStatus);
-    const totalKept = totalReviewed.filter((p) => p.metadata.reviewStatus === 'keep').length;
-    logger.info(`  Total kept posts: ${totalKept}`);
+    logger.info(`  Staged: ${staged} • Kept: ${kept} • Rejected: ${rejected}`);
   } catch (error) {
     logger.blank();
     logger.error((error as Error).message);
