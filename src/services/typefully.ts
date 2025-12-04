@@ -27,7 +27,7 @@ export class TypefullyService {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-API-KEY': `Bearer ${this.apiKey}`,
+        'X-API-KEY': this.apiKey,
       },
       body: JSON.stringify({
         content,
