@@ -7,8 +7,9 @@ export interface TypefullyDraftResponse {
 
 export class TypefullyService {
   private apiKey: string;
+  private socialSetId: string;
 
-  constructor() {
+  constructor(socialSetId?: string) {
     const apiKey = process.env.TYPEFULLY_API_KEY;
     if (!apiKey) {
       throw new Error(
@@ -17,13 +18,14 @@ export class TypefullyService {
       );
     }
     this.apiKey = apiKey;
+    this.socialSetId = socialSetId || '1';
   }
 
   /**
    * Create a draft in Typefully (X/Twitter only)
    */
   async createDraft(content: string): Promise<TypefullyDraftResponse> {
-    const response = await fetch(`${TYPEFULLY_API_URL}/social-sets/1/drafts`, {
+    const response = await fetch(`${TYPEFULLY_API_URL}/social-sets/${this.socialSetId}/drafts`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

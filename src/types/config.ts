@@ -27,6 +27,9 @@ export interface T2pConfig {
   x?: {
     clientId?: string;
   };
+  typefully?: {
+    socialSetId?: string;
+  };
 }
 
 export const DEFAULT_CONFIG: T2pConfig = {

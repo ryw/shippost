@@ -72,6 +72,9 @@ export async function reviewCommand(options: ReviewOptions): Promise<void> {
       throw new NotInitializedError();
     }
 
+    // Load config
+    const config = fs.loadConfig();
+
     // Load all posts
     const allPosts = fs.readPosts();
 
@@ -147,7 +150,7 @@ export async function reviewCommand(options: ReviewOptions): Promise<void> {
         try {
           // Lazy init Typefully service
           if (!typefully) {
-            typefully = new TypefullyService();
+            typefully = new TypefullyService(config.typefully?.socialSetId);
           }
           const draft = await typefully.createDraft(post.content);
           post.metadata.typefullyDraftId = draft.id;
