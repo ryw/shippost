@@ -82,6 +82,7 @@ Initialize a new t2p project in the current directory. Creates:
 | `prompts/analysis.md` | Style analysis prompt for X posts (advanced) |
 | `prompts/content-analysis.md` | Content strategy selection prompt (advanced) |
 | `prompts/banger-eval.md` | Viral potential scoring criteria (advanced) |
+| `prompts/reply.md` | Reply opportunity analysis prompt (advanced) |
 | `.t2prc.json` | Project configuration file |
 
 ### `t2p work`
@@ -432,7 +433,8 @@ your-project/
 │   ├── system.md             # System prompt (advanced)
 │   ├── analysis.md           # Style analysis prompt (advanced)
 │   ├── content-analysis.md   # Content strategy selection (advanced)
-│   └── banger-eval.md        # Viral potential scoring (advanced)
+│   ├── banger-eval.md        # Viral potential scoring (advanced)
+│   └── reply.md              # Reply opportunity analysis (advanced)
 ├── strategies.json           # Content strategies (CUSTOMIZABLE!)
 ├── posts.jsonl               # Generated posts (created after first run)
 └── .t2prc.json               # Configuration
@@ -807,6 +809,7 @@ All prompts used by t2p are stored as editable files in the `prompts/` directory
 - `prompts/analysis.md` - Prompt used to analyze your X posts and generate style guides
 - `prompts/content-analysis.md` - Criteria for analyzing transcript content and selecting strategies
 - `prompts/banger-eval.md` - Scoring criteria for evaluating viral potential
+- `prompts/reply.md` - Reply opportunity analysis for `t2p reply` command
 
 ### Why User-Editable Prompts?
 
@@ -832,6 +835,11 @@ All prompts used by t2p are stored as editable files in the `prompts/` directory
 - You need different scoring weights for the 7 factors
 - You want to add or remove evaluation criteria
 - You're optimizing for a specific platform beyond X/Twitter
+
+**Edit `reply.md`** when:
+- You want the LLM to find more/fewer reply opportunities
+- You want to change the criteria for what makes a good reply opportunity
+- You want to adjust the reply generation style or rules
 
 **Edit `system.md` or `analysis.md`** (advanced) when:
 - You want to change the core prompting strategy
