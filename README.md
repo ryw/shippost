@@ -263,6 +263,25 @@ ship reply --count 20
 6. You choose: post, edit, skip, or quit
 7. Posts approved replies directly via X API
 
+**X API Basic tier features:**
+
+If you have an X API Basic subscription ($200/month), you can enable additional features by adding `apiTier` to your config:
+
+```json
+// .shippostrc.json
+{
+  "x": {
+    "clientId": "your-client-id",
+    "apiTier": "basic"
+  }
+}
+```
+
+With `basic` tier enabled:
+- Tweets are sorted by author follower count (highest first)
+- Shows follower counts, likes, replies, and retweets for each tweet
+- Helps prioritize replying to high-influence accounts
+
 **Reply Style:**
 Replies follow the "Reply Style" section in `prompts/style.md`:
 - Never promotional
