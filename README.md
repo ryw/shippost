@@ -1,6 +1,6 @@
 # shippost
 
-> **Ship posts**: Transform meeting transcripts and notes into social media post drafts using local LLMs or cloud AI.
+> **Shippost**: Human-in-the-loop AI-powered social media content pipeline
 
 ## Overview
 
