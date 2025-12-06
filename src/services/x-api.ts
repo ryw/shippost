@@ -1,5 +1,46 @@
 import { TwitterApi, TweetV2, UserV2 } from 'twitter-api-v2';
 
+export class RateLimitError extends Error {
+  resetAt?: Date;
+
+  constructor(message: string, resetAt?: Date) {
+    super(message);
+    this.name = 'RateLimitError';
+    this.resetAt = resetAt;
+  }
+}
+
+function handleApiError(error: any, context: string): never {
+  // Check for rate limit (429)
+  if (error.code === 429 || error.message?.includes('429') || error.rateLimitError) {
+    const resetTime = error.rateLimit?.reset
+      ? new Date(error.rateLimit.reset * 1000)
+      : undefined;
+
+    let message = `⏳ X API rate limit reached`;
+    if (resetTime) {
+      const waitMins = Math.ceil((resetTime.getTime() - Date.now()) / 60000);
+      message += ` - resets in ${waitMins} minute${waitMins !== 1 ? 's' : ''}`;
+    } else {
+      message += ` - try again in ~15 minutes`;
+    }
+    message += `\n   💡 Tip: Use 'ship x-status' to check your rate limits`;
+
+    throw new RateLimitError(message, resetTime);
+  }
+
+  // Check for auth errors (401, 403)
+  if (error.code === 401 || error.code === 403) {
+    throw new Error(
+      `🔐 X API authentication error (${error.code})\n` +
+      `   Try: rm .shippost-tokens.json && ship reply`
+    );
+  }
+
+  // Generic error
+  throw new Error(`${context}: ${error.message || 'Unknown error'}`);
+}
+
 export interface Tweet {
   id: string;
   text: string;
@@ -58,7 +99,7 @@ export class XApiService {
 
       return tweets;
     } catch (error: any) {
-      throw new Error(`Failed to fetch tweets: ${error.message || 'Unknown error'}`);
+      handleApiError(error, 'Failed to fetch tweets');
     }
   }
 
@@ -130,7 +171,7 @@ export class XApiService {
 
       return tweets;
     } catch (error: any) {
-      throw new Error(`Failed to fetch home timeline: ${error.message || 'Unknown error'}`);
+      handleApiError(error, 'Failed to fetch home timeline');
     }
   }
 
@@ -147,7 +188,7 @@ export class XApiService {
         createdAt: new Date().toISOString(),
       };
     } catch (error: any) {
-      throw new Error(`Failed to post reply: ${error.message || 'Unknown error'}`);
+      handleApiError(error, 'Failed to post reply');
     }
   }
 
@@ -159,7 +200,7 @@ export class XApiService {
       const me = await this.client.v2.me();
       await this.client.v2.like(me.data.id, tweetId);
     } catch (error: any) {
-      throw new Error(`Failed to like tweet: ${error.message || 'Unknown error'}`);
+      handleApiError(error, 'Failed to like tweet');
     }
   }
 
