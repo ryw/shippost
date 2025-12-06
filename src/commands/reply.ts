@@ -400,8 +400,8 @@ export async function replyCommand(options: ReplyOptions): Promise<void> {
         try {
           await apiService.likeTweet(opportunity.tweet.id);
           logger.info(`${logger.style.red('♥')} Liked`);
-        } catch {
-          // Silently ignore like failures (may already be liked)
+        } catch (likeError) {
+          logger.warn(`Could not like tweet: ${(likeError as Error).message}`);
         }
       } catch (error) {
         logger.error(`Failed to post: ${(error as Error).message}`);
