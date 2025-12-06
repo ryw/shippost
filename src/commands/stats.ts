@@ -1,9 +1,14 @@
+import { existsSync, readFileSync, writeFileSync } from 'fs';
+import { join } from 'path';
 import { FileSystemService } from '../services/file-system.js';
 import { XAuthService } from '../services/x-auth.js';
 import { XApiService } from '../services/x-api.js';
 import { logger } from '../utils/logger.js';
 import { isShippostProject } from '../utils/validation.js';
 import { NotInitializedError } from '../utils/errors.js';
+
+const STATS_CACHE_FILE = '.shippost-stats-cache.json';
+const STATS_CACHE_MAX_AGE = 30 * 60 * 1000; // 30 minutes
 
 interface TweetWithMetrics {
   id: string;
@@ -112,8 +117,62 @@ export async function statsCommand(): Promise<void> {
     }
 
     // Fetch recent tweets with metrics (up to 500 to cover ~30 days)
-    logger.info(style.dim('\n    Fetching recent tweets (this may take a moment)...'));
-    const tweets = await getRecentTweetsWithMetrics(accessToken, me.id, 500);
+    // Uses caching to avoid rate limits
+    const cacheFile = join(cwd, STATS_CACHE_FILE);
+    let tweets: TweetWithMetrics[] = [];
+    let usingCache = false;
+
+    // Try to load from cache first
+    let cachedData: { tweets: TweetWithMetrics[]; timestamp: number; userId: string } | null = null;
+    if (existsSync(cacheFile)) {
+      try {
+        cachedData = JSON.parse(readFileSync(cacheFile, 'utf8'));
+      } catch {
+        // Ignore invalid cache
+      }
+    }
+
+    // Check if cache is fresh and for same user
+    const cacheIsFresh = cachedData &&
+      cachedData.userId === me.id &&
+      Date.now() - cachedData.timestamp < STATS_CACHE_MAX_AGE;
+
+    if (cacheIsFresh && cachedData) {
+      tweets = cachedData.tweets;
+      usingCache = true;
+      logger.info(style.dim('\n    Using cached data (less than 30 min old)'));
+    } else {
+      logger.info(style.dim('\n    Fetching recent tweets (this may take a moment)...'));
+      try {
+        tweets = await getRecentTweetsWithMetrics(accessToken, me.id, 500);
+        // Cache the results
+        writeFileSync(cacheFile, JSON.stringify({
+          tweets,
+          timestamp: Date.now(),
+          userId: me.id,
+        }));
+      } catch (error: any) {
+        if (error.isRateLimit) {
+          // Try to use stale cache
+          if (cachedData && cachedData.userId === me.id) {
+            tweets = cachedData.tweets;
+            usingCache = true;
+            const age = Math.round((Date.now() - cachedData.timestamp) / 60000);
+            logger.warn(`⏳ Rate limited - using cached data from ${age} min ago`);
+            if (error.resetTime) {
+              const waitMins = Math.ceil((error.resetTime.getTime() - Date.now()) / 60000);
+              logger.info(style.dim(`   Rate limit resets in ${waitMins} minute${waitMins !== 1 ? 's' : ''}`));
+            }
+          } else {
+            logger.error('⏳ X API rate limit reached and no cached data available');
+            logger.info(style.dim('   Try again in ~15 minutes'));
+            process.exit(1);
+          }
+        } else {
+          throw error;
+        }
+      }
+    }
 
     if (tweets.length === 0) {
       logger.warn('No recent tweets found');
@@ -198,7 +257,8 @@ export async function statsCommand(): Promise<void> {
 
     // Footer
     console.log();
-    console.log(style.dim(`─ Updated: ${new Date().toLocaleString()} ─`));
+    const cacheNote = usingCache ? ' (cached)' : '';
+    console.log(style.dim(`─ Updated: ${new Date().toLocaleString()}${cacheNote} ─`));
     console.log();
 
   } catch (error) {
@@ -284,8 +344,15 @@ async function getRecentTweetsWithMetrics(accessToken: string, userId: string, c
     }
 
     return tweets;
-  } catch {
-    return [];
+  } catch (error: any) {
+    // Check for rate limit
+    if (error.code === 429 || error.message?.includes('429') || error.rateLimitError) {
+      const resetTime = error.rateLimit?.reset
+        ? new Date(error.rateLimit.reset * 1000)
+        : undefined;
+      throw { isRateLimit: true, resetTime, message: 'Rate limit reached' };
+    }
+    throw error;
   }
 }
 
