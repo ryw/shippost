@@ -343,9 +343,9 @@ export async function replyCommand(options: ReplyOptions): Promise<void> {
         // Show daily breakdown
         const todayStr = new Date().toISOString().split('T')[0];
         const todayImpressions = stats.dailyImpressions.find(d => d.date === todayStr)?.impressions || 0;
-        logger.info(`   ${style.dim('Today:')} ${style.brightCyan(formatCount(todayImpressions))}`);
-        logger.info(`   ${style.dim('5-day total:')} ${formatCount(stats.totalImpressions)}`);
-        logger.info(`   ${style.dim('Daily avg:')} ${formatCount(Math.round(avgDaily))}`);
+        logger.info(`   ${style.dim("Today's posts:")} ${style.brightCyan(formatCount(todayImpressions))}`);
+        logger.info(`   ${style.dim('5-day posts total:')} ${formatCount(stats.totalImpressions)}`);
+        logger.info(`   ${style.dim('Daily avg:')} ${formatCount(Math.round(avgDaily))} ${style.dim('(posts from that day)')}`);
 
         // Show 90-day projection vs goal
         const projColor = projected90Days >= goal ? style.brightGreen : style.yellow;
