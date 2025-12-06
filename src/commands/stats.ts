@@ -8,7 +8,7 @@ import { isShippostProject } from '../utils/validation.js';
 import { NotInitializedError } from '../utils/errors.js';
 
 const STATS_CACHE_FILE = '.shippost-stats-cache.json';
-const STATS_CACHE_MAX_AGE = 30 * 60 * 1000; // 30 minutes
+const STATS_CACHE_MAX_AGE = 60 * 60 * 1000; // 1 hour (Basic tier has strict rate limits)
 
 interface TweetWithMetrics {
   id: string;
@@ -140,11 +140,13 @@ export async function statsCommand(): Promise<void> {
     if (cacheIsFresh && cachedData) {
       tweets = cachedData.tweets;
       usingCache = true;
-      logger.info(style.dim('\n    Using cached data (less than 30 min old)'));
+      logger.info(style.dim('\n    Using cached data (less than 1 hour old)'));
     } else {
       logger.info(style.dim('\n    Fetching recent tweets (this may take a moment)...'));
       try {
-        tweets = await getRecentTweetsWithMetrics(accessToken, me.id, 500);
+        // Fetch only 100 tweets (1 API call) to conserve rate limit
+        // Basic tier allows only 5 userTimeline requests per 15 min
+        tweets = await getRecentTweetsWithMetrics(accessToken, me.id, 100);
         // Cache the results
         writeFileSync(cacheFile, JSON.stringify({
           tweets,
@@ -165,7 +167,12 @@ export async function statsCommand(): Promise<void> {
             }
           } else {
             logger.error('⏳ X API rate limit reached and no cached data available');
-            logger.info(style.dim('   Try again in ~15 minutes'));
+            if (error.resetTime) {
+              const resetDate = new Date(error.resetTime);
+              logger.info(style.dim(`   Resets at ${resetDate.toLocaleTimeString()}`));
+            } else {
+              logger.info(style.dim('   Try again in ~15 minutes'));
+            }
             process.exit(1);
           }
         } else {
@@ -349,16 +356,6 @@ async function getRecentTweetsWithMetrics(accessToken: string, userId: string, c
 
     return tweets;
   } catch (error: any) {
-    // Debug: log full error structure
-    console.error('\n[DEBUG] Full error:', JSON.stringify({
-      code: error.code,
-      message: error.message,
-      rateLimitError: error.rateLimitError,
-      data: error.data,
-      errors: error.errors,
-      rateLimit: error.rateLimit,
-    }, null, 2));
-
     // Check for rate limit
     if (error.code === 429 || error.message?.includes('429') || error.rateLimitError) {
       const resetTime = error.rateLimit?.reset
@@ -366,7 +363,7 @@ async function getRecentTweetsWithMetrics(accessToken: string, userId: string, c
         : undefined;
       throw { isRateLimit: true, resetTime, message: 'Rate limit reached' };
     }
-    // Log actual error for debugging
+    // Pass through other errors with details
     throw {
       isRateLimit: false,
       message: error.message || 'Unknown error',
