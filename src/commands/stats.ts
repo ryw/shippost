@@ -349,6 +349,16 @@ async function getRecentTweetsWithMetrics(accessToken: string, userId: string, c
 
     return tweets;
   } catch (error: any) {
+    // Debug: log full error structure
+    console.error('\n[DEBUG] Full error:', JSON.stringify({
+      code: error.code,
+      message: error.message,
+      rateLimitError: error.rateLimitError,
+      data: error.data,
+      errors: error.errors,
+      rateLimit: error.rateLimit,
+    }, null, 2));
+
     // Check for rate limit
     if (error.code === 429 || error.message?.includes('429') || error.rateLimitError) {
       const resetTime = error.rateLimit?.reset
