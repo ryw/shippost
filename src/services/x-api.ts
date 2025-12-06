@@ -164,6 +164,51 @@ export class XApiService {
   }
 
   /**
+   * Get impression stats for user's tweets
+   * Returns daily impressions for the last N days
+   */
+  async getImpressionStats(days: number = 7): Promise<{
+    dailyImpressions: { date: string; impressions: number }[];
+    totalImpressions: number;
+  }> {
+    try {
+      const me = await this.getMe();
+
+      // Fetch recent tweets with organic metrics (includes impressions)
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+
+      const timeline = await this.client.v2.userTimeline(me.id, {
+        max_results: 100,
+        'tweet.fields': ['created_at', 'organic_metrics', 'public_metrics'],
+        exclude: ['retweets'],
+        start_time: startDate.toISOString(),
+      });
+
+      // Group impressions by date
+      const dailyMap = new Map<string, number>();
+
+      for await (const tweet of timeline) {
+        const tweetDate = new Date(tweet.created_at || '').toISOString().split('T')[0];
+        const impressions = (tweet as any).organic_metrics?.impression_count || 0;
+        dailyMap.set(tweetDate, (dailyMap.get(tweetDate) || 0) + impressions);
+      }
+
+      // Convert to array sorted by date
+      const dailyImpressions = Array.from(dailyMap.entries())
+        .map(([date, impressions]) => ({ date, impressions }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+      const totalImpressions = dailyImpressions.reduce((sum, d) => sum + d.impressions, 0);
+
+      return { dailyImpressions, totalImpressions };
+    } catch (error: any) {
+      // Return empty stats if we can't fetch (might not have access)
+      return { dailyImpressions: [], totalImpressions: 0 };
+    }
+  }
+
+  /**
    * Get rate limit status for key endpoints
    */
   async getRateLimitStatus(): Promise<{

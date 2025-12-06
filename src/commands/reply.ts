@@ -300,6 +300,41 @@ export async function replyCommand(options: ReplyOptions): Promise<void> {
 
     if (includeMetrics) {
       logger.info(`${style.cyan('⚡')} ${style.bold(style.cyan('BASIC X MODE'))} ${style.dim('• sorted by influence • engagement metrics')}`);
+
+      // Show impression stats for Basic tier
+      try {
+        const stats = await apiService.getImpressionStats(5);
+        if (stats.dailyImpressions.length > 0) {
+          const avgDaily = stats.totalImpressions / stats.dailyImpressions.length;
+          const projected90Days = Math.round(avgDaily * 90);
+          const goal = 5_000_000;
+          const percentOfGoal = ((projected90Days / goal) * 100).toFixed(1);
+
+          logger.blank();
+          logger.info(style.bold('📊 Impression Stats (last 5 days)'));
+
+          // Show daily breakdown
+          const todayStr = new Date().toISOString().split('T')[0];
+          const todayImpressions = stats.dailyImpressions.find(d => d.date === todayStr)?.impressions || 0;
+          logger.info(`   ${style.dim('Today:')} ${style.brightCyan(formatCount(todayImpressions))}`);
+          logger.info(`   ${style.dim('5-day total:')} ${formatCount(stats.totalImpressions)}`);
+          logger.info(`   ${style.dim('Daily avg:')} ${formatCount(Math.round(avgDaily))}`);
+
+          // Show 90-day projection vs goal
+          const projColor = projected90Days >= goal ? style.brightGreen : style.yellow;
+          logger.info(`   ${style.dim('90-day projection:')} ${projColor(formatCount(projected90Days))} ${style.dim(`(${percentOfGoal}% of 5M goal)`)}`);
+
+          // Progress bar toward goal
+          const progressPct = Math.min(100, (projected90Days / goal) * 100);
+          const barWidth = 20;
+          const filled = Math.round((progressPct / 100) * barWidth);
+          const barColor = progressPct >= 100 ? style.green : progressPct >= 50 ? style.yellow : style.red;
+          const bar = barColor('█'.repeat(filled)) + style.dim('░'.repeat(barWidth - filled));
+          logger.info(`   ${bar} ${style.dim(`${progressPct.toFixed(0)}%`)}`);
+        }
+      } catch {
+        // Silently skip if impressions aren't available
+      }
     } else {
       logger.info(`${style.dim('○')} ${style.bold('FREE X MODE')} ${style.dim('• chronological • no metrics')}`);
     }
