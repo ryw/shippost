@@ -216,8 +216,9 @@ export async function statsCommand(): Promise<void> {
     });
 
     // Best Times Section (based on engagement rate)
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     console.log();
-    console.log(style.bold(' ⏰ BEST POSTING TIMES (by engagement)'));
+    console.log(style.bold(` ⏰ BEST POSTING TIMES (${timezone})`));
     console.log(style.dim(' ─────────────────────────────────────────────────────────────────────'));
 
     const hourlyEngagement = getHourlyEngagement(last30d);
@@ -226,7 +227,7 @@ export async function statsCommand(): Promise<void> {
       .slice(0, 3);
 
     console.log(`    ${topHours.map(h => style.bold(formatHour(h.hour))).join('  •  ')}`);
-    console.log(`    ${style.dim('(based on avg engagement rate from last 30 days)')}`);
+    console.log(`    ${style.dim('(by avg engagement rate, last 30 days)')}`);
 
     // Footer
     console.log();
