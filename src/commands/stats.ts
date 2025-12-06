@@ -140,99 +140,65 @@ export async function statsCommand(): Promise<void> {
     const stats7d = sumMetrics(last7d);
     const stats30d = sumMetrics(last30d);
 
-    // Posting Activity Section
-    console.log();
-    console.log(style.bold(' 📝 POSTING ACTIVITY'));
-    console.log(style.dim(' ─────────────────────────────────────────────────────────────────────'));
-    console.log(`    ${style.dim('Last 24h:')}  ${style.bold(last24h.length.toString())} posts`);
-    console.log(`    ${style.dim('Last 7d:')}   ${style.bold(last7d.length.toString())} posts  ${style.dim(`(${(last7d.length / 7).toFixed(1)}/day avg)`)}`);
-    console.log(`    ${style.dim('Last 30d:')}  ${style.bold(last30d.length.toString())} posts  ${style.dim(`(${(last30d.length / 30).toFixed(1)}/day avg)`)}`);
+    // Two-column layout helper
+    const colWidth = 36;
+    const pad = (s: string, w: number) => {
+      // Strip ANSI codes for length calculation
+      const stripped = s.replace(/\x1b\[[0-9;]*m/g, '');
+      const padding = Math.max(0, w - stripped.length);
+      return s + ' '.repeat(padding);
+    };
+    const printRow = (left: string, right: string) => {
+      console.log(pad(left, colWidth) + ' │ ' + right);
+    };
+    const divider = () => console.log(style.dim('─'.repeat(colWidth) + '─┼─' + '─'.repeat(colWidth)));
 
-    // Daily posting sparkline
+    // Sparklines
     const dailyPosts = getDailyPostCounts(tweets, 14);
-    console.log();
-    console.log(`    ${style.dim('14-day trend:')} ${style.cyan(renderSparkline(dailyPosts))} ${style.dim('(posts/day)')}`);
-
-    // Impressions Section
-    console.log();
-    console.log(style.bold(' 👀 IMPRESSIONS'));
-    console.log(style.dim(' ─────────────────────────────────────────────────────────────────────'));
-    console.log(`    ${style.dim('Last 24h posts:')}  ${style.brightCyan(style.bold(formatNumber(stats24h.impressions)))}`);
-    console.log(`    ${style.dim('Last 7d posts:')}   ${style.brightCyan(style.bold(formatNumber(stats7d.impressions)))}  ${style.dim(`(${formatNumber(Math.round(stats7d.impressions / 7))}/day avg)`)}`);
-    console.log(`    ${style.dim('Last 30d posts:')}  ${style.brightCyan(style.bold(formatNumber(stats30d.impressions)))}  ${style.dim(`(${formatNumber(Math.round(stats30d.impressions / 30))}/day avg)`)}`);
-
-    // Daily impressions sparkline
     const dailyImpressions = getDailyImpressions(tweets, 14);
-    console.log();
-    console.log(`    ${style.dim('14-day trend:')} ${style.cyan(renderSparkline(dailyImpressions))}`);
 
-    // 90-day Goal
+    // 90-day goal calcs
     const dailyAvg = stats7d.impressions / 7;
     const projected90d = Math.round(dailyAvg * 90);
     const goal = 5_000_000;
     const pctOfGoal = (projected90d / goal) * 100;
 
-    console.log();
-    console.log(style.bold(' 🎯 90-DAY GOAL: 5M IMPRESSIONS'));
-    console.log(style.dim(' ─────────────────────────────────────────────────────────────────────'));
-    console.log(`    ${style.dim('Current pace:')}     ${formatNumber(Math.round(dailyAvg))}${style.dim('/day')}`);
-    console.log(`    ${style.dim('Projected 90d:')}    ${pctOfGoal >= 100 ? style.brightGreen(formatNumber(projected90d)) : style.yellow(formatNumber(projected90d))}`);
-    console.log(`    ${style.dim('Required pace:')}    ${formatNumber(Math.round(goal / 90))}${style.dim('/day')}`);
-    console.log();
-    console.log(`    ${renderProgressBar(projected90d, goal)} ${style.dim(`${pctOfGoal.toFixed(1)}%`)}`);
-
-    if (pctOfGoal < 100) {
-      const needed = Math.round((goal / 90) - dailyAvg);
-      console.log(`    ${style.dim(`Need +${formatNumber(needed)}/day to hit goal`)}`);
-    } else {
-      console.log(`    ${style.brightGreen('✓ On track to exceed goal!')}`);
-    }
-
-    // Engagement Section
-    console.log();
-    console.log(style.bold(' 💬 ENGAGEMENT (last 7 days)'));
-    console.log(style.dim(' ─────────────────────────────────────────────────────────────────────'));
-    console.log(`    ${style.red('♥')}  ${style.bold(formatNumber(stats7d.likes))} ${style.dim('likes')}        ${style.blue('💬')} ${style.bold(formatNumber(stats7d.replies))} ${style.dim('replies')}`);
-    console.log(`    ${style.green('↻')}  ${style.bold(formatNumber(stats7d.retweets))} ${style.dim('retweets')}     ${style.magenta('❝')}  ${style.bold(formatNumber(stats7d.quotes))} ${style.dim('quotes')}`);
-    console.log(`    ${style.yellow('🔖')} ${style.bold(formatNumber(stats7d.bookmarks))} ${style.dim('bookmarks')}`);
-    console.log();
-    console.log(`    ${style.dim('Avg engagement rate:')} ${style.bold(formatPercent(stats7d.engagementRate))}`);
-
-    // Top Posts Section
-    console.log();
-    console.log(style.bold(' 🏆 TOP POSTS (by impressions, last 7 days)'));
-    console.log(style.dim(' ─────────────────────────────────────────────────────────────────────'));
-
-    const topPosts = [...last7d]
-      .sort((a, b) => b.impressions - a.impressions)
-      .slice(0, 3);
-
-    topPosts.forEach((post, i) => {
-      const medal = ['🥇', '🥈', '🥉'][i];
-      console.log();
-      console.log(`    ${medal} ${style.bold(formatNumber(post.impressions))} ${style.dim('impressions')}  •  ${style.red('♥')} ${formatNumber(post.likes)}  ${style.blue('💬')} ${formatNumber(post.replies)}  ${style.green('↻')} ${formatNumber(post.retweets)}`);
-      console.log(`       ${style.dim(truncate(post.text, 60))}`);
-      console.log(`       ${style.dim(`https://x.com/${me.username}/status/${post.id}`)}`);
-    });
-
-    // Best Times Section (based on engagement rate)
+    // Best times
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    console.log();
-    console.log(style.bold(` ⏰ BEST POSTING TIMES (${timezone})`));
-    console.log(style.dim(' ─────────────────────────────────────────────────────────────────────'));
-
     const hourlyEngagement = getHourlyEngagement(last30d);
     const topHours = hourlyEngagement
       .sort((a, b) => b.avgEngagement - a.avgEngagement)
       .slice(0, 3);
 
-    console.log(`    ${topHours.map(h => style.bold(formatHour(h.hour))).join('  •  ')}`);
-    console.log(`    ${style.dim('(by avg engagement rate, last 30 days)')}`);
+    console.log();
+    printRow(style.bold('📝 POSTING ACTIVITY'), style.bold('👀 IMPRESSIONS'));
+    divider();
+    printRow(`${style.dim('24h:')} ${style.bold(last24h.length.toString())} posts`, `${style.dim('24h posts:')} ${style.brightCyan(formatNumber(stats24h.impressions))}`);
+    printRow(`${style.dim('7d:')}  ${style.bold(last7d.length.toString())} ${style.dim(`(${(last7d.length/7).toFixed(1)}/day)`)}`, `${style.dim('7d posts:')}  ${style.brightCyan(formatNumber(stats7d.impressions))} ${style.dim(`(${formatNumber(Math.round(stats7d.impressions/7))}/day)`)}`);
+    printRow(`${style.dim('30d:')} ${style.bold(last30d.length.toString())} ${style.dim(`(${(last30d.length/30).toFixed(1)}/day)`)}`, `${style.dim('30d posts:')} ${style.brightCyan(formatNumber(stats30d.impressions))} ${style.dim(`(${formatNumber(Math.round(stats30d.impressions/30))}/day)`)}`);
+    printRow(`${style.dim('Trend:')} ${style.cyan(renderSparkline(dailyPosts))}`, `${style.dim('Trend:')} ${style.cyan(renderSparkline(dailyImpressions))}`);
+
+    console.log();
+    printRow(style.bold('🎯 90-DAY GOAL: 5M'), style.bold('💬 ENGAGEMENT (7d)'));
+    divider();
+    printRow(`${style.dim('Pace:')} ${formatNumber(Math.round(dailyAvg))}${style.dim('/day')}`, `${style.red('♥')} ${style.bold(formatNumber(stats7d.likes))} ${style.dim('likes')}`);
+    printRow(`${style.dim('Proj:')} ${pctOfGoal >= 100 ? style.brightGreen(formatNumber(projected90d)) : style.yellow(formatNumber(projected90d))}`, `${style.blue('💬')} ${style.bold(formatNumber(stats7d.replies))} ${style.dim('replies')}`);
+    printRow(`${style.dim('Need:')} ${formatNumber(Math.round(goal/90))}${style.dim('/day')}`, `${style.green('↻')} ${style.bold(formatNumber(stats7d.retweets))} ${style.dim('retweets')}`);
+    printRow(`${renderProgressBar(projected90d, goal, 20)} ${style.dim(`${pctOfGoal.toFixed(0)}%`)}`, `${style.magenta('❝')} ${style.bold(formatNumber(stats7d.quotes))} ${style.dim('quotes')}`);
+    const goalMsg = pctOfGoal >= 100 ? style.brightGreen('✓ On track!') : style.dim(`+${formatNumber(Math.round((goal/90)-dailyAvg))}/day needed`);
+    printRow(goalMsg, `${style.yellow('🔖')} ${style.bold(formatNumber(stats7d.bookmarks))} ${style.dim('bookmarks')}`);
+    printRow('', `${style.dim('Eng rate:')} ${style.bold(formatPercent(stats7d.engagementRate))}`);
+
+    console.log();
+    printRow(style.bold(`⏰ BEST TIMES`), style.bold('🏆 TOP POST (7d)'));
+    divider();
+    const topPost = [...last7d].sort((a, b) => b.impressions - a.impressions)[0];
+    printRow(`${topHours.map(h => style.bold(formatHour(h.hour))).join(' • ')}`, topPost ? `${style.bold(formatNumber(topPost.impressions))} imp • ${style.red('♥')}${formatNumber(topPost.likes)}` : '');
+    printRow(style.dim(`(${timezone.split('/')[1] || timezone})`), topPost ? style.dim(truncate(topPost.text, 34)) : '');
 
     // Footer
     console.log();
-    console.log(style.dim(' ─────────────────────────────────────────────────────────────────────'));
-    console.log(style.dim(`    Last updated: ${new Date().toLocaleString()}`));
+    console.log(style.dim(`─ Updated: ${new Date().toLocaleString()} ─`));
     console.log();
 
   } catch (error) {
