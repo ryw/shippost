@@ -12,6 +12,43 @@ import { isShippostProject } from '../utils/validation.js';
 import { NotInitializedError } from '../utils/errors.js';
 import { readlineSync } from '../utils/readline.js';
 
+const SKIP_CACHE_FILE = '.shippost-skipped-tweets.json';
+const SKIP_CACHE_MAX_AGE = 24 * 60 * 60 * 1000; // 24 hours
+
+interface SkipCache {
+  [tweetId: string]: number; // timestamp when skipped
+}
+
+function loadSkipCache(cwd: string): SkipCache {
+  const cacheFile = join(cwd, SKIP_CACHE_FILE);
+  if (!existsSync(cacheFile)) return {};
+  try {
+    const data = JSON.parse(readFileSync(cacheFile, 'utf8'));
+    // Clean up old entries
+    const now = Date.now();
+    const cleaned: SkipCache = {};
+    for (const [id, timestamp] of Object.entries(data)) {
+      if (now - (timestamp as number) < SKIP_CACHE_MAX_AGE) {
+        cleaned[id] = timestamp as number;
+      }
+    }
+    return cleaned;
+  } catch {
+    return {};
+  }
+}
+
+function saveSkipCache(cwd: string, cache: SkipCache): void {
+  const cacheFile = join(cwd, SKIP_CACHE_FILE);
+  writeFileSync(cacheFile, JSON.stringify(cache, null, 2));
+}
+
+function addToSkipCache(cwd: string, tweetId: string): void {
+  const cache = loadSkipCache(cwd);
+  cache[tweetId] = Date.now();
+  saveSkipCache(cwd, cache);
+}
+
 interface ReplyOptions {
   count?: number;
 }
@@ -360,6 +397,15 @@ export async function replyCommand(options: ReplyOptions): Promise<void> {
     // Filter out user's own tweets
     tweets = tweets.filter((t) => t.authorUsername?.toLowerCase() !== user.username.toLowerCase());
 
+    // Filter out previously skipped tweets (within 24 hours)
+    const skipCache = loadSkipCache(cwd);
+    const skippedIds = new Set(Object.keys(skipCache));
+    const beforeSkipFilter = tweets.length;
+    tweets = tweets.filter((t) => !skippedIds.has(t.id));
+    if (beforeSkipFilter > tweets.length) {
+      logger.info(style.dim(`Filtered ${beforeSkipFilter - tweets.length} previously skipped tweets`));
+    }
+
     if (tweets.length === 0) {
       logger.error('No tweets found in timeline');
       process.exit(1);
@@ -417,6 +463,7 @@ export async function replyCommand(options: ReplyOptions): Promise<void> {
 
       if (decision === 'skip') {
         skipped++;
+        addToSkipCache(cwd, opportunity.tweet.id);
         logger.info('Skipped');
         continue;
       }
