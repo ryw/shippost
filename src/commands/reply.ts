@@ -101,7 +101,7 @@ async function promptForReplyDecision(): Promise<'post' | 'edit' | 'skip' | 'qui
     });
 
     // Compact prompt
-    const prompt = `  ${style.green('⏎')}post ${style.yellow('e')}dit ${style.dim('n')}skip ${style.red('q')}uit > `;
+    const prompt = `  ${style.green('⏎')}post ${style.yellow('e')}dit ${style.dim('s')}kip ${style.red('q')}uit > `;
 
     rl.question(prompt, (answer) => {
       rl.close();
@@ -111,7 +111,7 @@ async function promptForReplyDecision(): Promise<'post' | 'edit' | 'skip' | 'qui
         resolve('post');
       } else if (trimmed === 'e') {
         resolve('edit');
-      } else if (trimmed === 'n' || trimmed === 's') {
+      } else if (trimmed === 's') {
         resolve('skip');
       } else if (trimmed === 'q') {
         resolve('quit');
