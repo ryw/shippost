@@ -196,6 +196,13 @@ export async function statsCommand(): Promise<void> {
     const last7d = tweets.filter(t => (now.getTime() - new Date(t.createdAt).getTime()) < 7 * 24 * 60 * 60 * 1000);
     const last30d = tweets.filter(t => (now.getTime() - new Date(t.createdAt).getTime()) < 30 * 24 * 60 * 60 * 1000);
 
+    // Calculate actual data coverage (oldest tweet age in days)
+    const oldestTweet = tweets.length > 0 ? tweets[tweets.length - 1] : null;
+    const oldestTweetAge = oldestTweet
+      ? Math.floor((now.getTime() - new Date(oldestTweet.createdAt).getTime()) / (24 * 60 * 60 * 1000))
+      : 0;
+    const dataCoverageDays = Math.max(1, oldestTweetAge);
+
     const sumMetrics = (arr: TweetWithMetrics[]) => ({
       impressions: arr.reduce((s, t) => s + t.impressions, 0),
       likes: arr.reduce((s, t) => s + t.likes, 0),
@@ -245,7 +252,12 @@ export async function statsCommand(): Promise<void> {
     divider();
     printRow(`${style.dim('24h:')} ${style.bold(last24h.length.toString())} posts`, `${style.dim('24h posts:')} ${style.brightCyan(formatNumber(stats24h.impressions))}`);
     printRow(`${style.dim('7d:')}  ${style.bold(last7d.length.toString())} ${style.dim(`(${(last7d.length/7).toFixed(1)}/day)`)}`, `${style.dim('7d posts:')}  ${style.brightCyan(formatNumber(stats7d.impressions))} ${style.dim(`(${formatNumber(Math.round(stats7d.impressions/7))}/day)`)}`);
-    printRow(`${style.dim('30d:')} ${style.bold(last30d.length.toString())} ${style.dim(`(${(last30d.length/30).toFixed(1)}/day)`)}`, `${style.dim('30d posts:')} ${style.brightCyan(formatNumber(stats30d.impressions))} ${style.dim(`(${formatNumber(Math.round(stats30d.impressions/30))}/day)`)}`);
+    // Only show 30d if we actually have >7 days of data
+    if (dataCoverageDays > 7) {
+      printRow(`${style.dim('30d:')} ${style.bold(last30d.length.toString())} ${style.dim(`(${(last30d.length/30).toFixed(1)}/day)`)}`, `${style.dim('30d posts:')} ${style.brightCyan(formatNumber(stats30d.impressions))} ${style.dim(`(${formatNumber(Math.round(stats30d.impressions/30))}/day)`)}`);
+    } else {
+      printRow(`${style.dim(`Data:`)} ${style.bold(tweets.length.toString())} ${style.dim(`posts over ${dataCoverageDays}d`)}`, '');
+    }
     printRow(`${style.dim('Trend:')} ${style.cyan(renderSparkline(dailyPosts))}`, `${style.dim('Trend:')} ${style.cyan(renderSparkline(dailyImpressions))}`);
 
     console.log();
