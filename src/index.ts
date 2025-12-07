@@ -16,6 +16,7 @@ import { analyzeXCommand } from './commands/analyze-x.js';
 import { replyCommand } from './commands/reply.js';
 import { xStatusCommand } from './commands/x-status.js';
 import { statsCommand } from './commands/stats.js';
+import { syncPromptsCommand } from './commands/sync-prompts.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -88,5 +89,11 @@ program
   .command('stats')
   .description('Comprehensive X stats dashboard with all metrics')
   .action(statsCommand);
+
+program
+  .command('sync-prompts')
+  .description('Sync local prompts with package defaults')
+  .option('--force', 'Update all prompts without prompting')
+  .action(syncPromptsCommand);
 
 program.parse();
