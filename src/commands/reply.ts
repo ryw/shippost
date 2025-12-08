@@ -406,6 +406,16 @@ export async function replyCommand(options: ReplyOptions): Promise<void> {
       logger.info(style.dim(`Filtered ${beforeSkipFilter - tweets.length} previously skipped tweets`));
     }
 
+    // For Basic tier: filter to accounts with 10k+ followers
+    if (includeMetrics) {
+      const MIN_FOLLOWERS = 10000;
+      const beforeFollowerFilter = tweets.length;
+      tweets = tweets.filter((t) => (t.authorFollowersCount || 0) >= MIN_FOLLOWERS);
+      if (beforeFollowerFilter > tweets.length) {
+        logger.info(style.dim(`Filtered ${beforeFollowerFilter - tweets.length} tweets from accounts with <10k followers`));
+      }
+    }
+
     if (tweets.length === 0) {
       logger.error('No tweets found in timeline');
       process.exit(1);
