@@ -6,6 +6,16 @@ import { XApiService } from '../services/x-api.js';
 import { logger } from '../utils/logger.js';
 import { isShippostProject } from '../utils/validation.js';
 import { NotInitializedError } from '../utils/errors.js';
+import {
+  formatNumber,
+  formatPercent,
+  truncate,
+  formatHour,
+  renderSparkline,
+  renderProgressBar,
+  padWithAnsi,
+} from '../utils/format.js';
+import type { TweetWithMetrics as ApiTweetWithMetrics, UserWithMetrics } from '../types/x-api.js';
 
 const STATS_CACHE_FILE = '.shippost-stats-cache.json';
 const STATS_CACHE_MAX_AGE = 60 * 60 * 1000; // 1 hour (Basic tier has strict rate limits)
@@ -29,49 +39,6 @@ interface FetchError {
   message?: string;
   code?: number;
   details?: string;
-}
-
-function formatNumber(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return n.toString();
-}
-
-function formatPercent(n: number): string {
-  return `${n.toFixed(2)}%`;
-}
-
-function truncate(str: string, len: number): string {
-  const oneLine = str.replace(/\n/g, ' ').trim();
-  if (oneLine.length <= len) return oneLine;
-  return oneLine.slice(0, len - 1) + '…';
-}
-
-function renderProgressBar(current: number, goal: number, width: number = 30): string {
-  const { style } = logger;
-  const pct = Math.min(1, current / goal);
-  const filled = Math.round(pct * width);
-  const empty = width - filled;
-
-  let color = style.red;
-  if (pct >= 1) color = style.brightGreen;
-  else if (pct >= 0.5) color = style.yellow;
-  else if (pct >= 0.25) color = style.yellow;
-
-  return color('█'.repeat(filled)) + style.dim('░'.repeat(empty));
-}
-
-function renderSparkline(values: number[]): string {
-  if (values.length === 0) return '';
-  const chars = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
-  const max = Math.max(...values);
-  const min = Math.min(...values);
-  const range = max - min || 1;
-
-  return values.map(v => {
-    const idx = Math.round(((v - min) / range) * (chars.length - 1));
-    return chars[idx];
-  }).join('');
 }
 
 export async function statsCommand(): Promise<void> {
@@ -275,7 +242,7 @@ export async function statsCommand(): Promise<void> {
     printRow(`${style.dim('Pace:')} ${formatNumber(Math.round(dailyAvg))}${style.dim('/day')}`, `${style.red('♥')} ${style.bold(formatNumber(stats7d.likes))} ${style.dim('likes')}`);
     printRow(`${style.dim('Proj:')} ${pctOfGoal >= 100 ? style.brightGreen(formatNumber(projected90d)) : style.yellow(formatNumber(projected90d))}`, `${style.blue('💬')} ${style.bold(formatNumber(stats7d.replies))} ${style.dim('replies')}`);
     printRow(`${style.dim('Need:')} ${formatNumber(Math.round(goal/90))}${style.dim('/day')}`, `${style.green('↻')} ${style.bold(formatNumber(stats7d.retweets))} ${style.dim('retweets')}`);
-    printRow(`${renderProgressBar(projected90d, goal, 20)} ${style.dim(`${pctOfGoal.toFixed(0)}%`)}`, `${style.magenta('❝')} ${style.bold(formatNumber(stats7d.quotes))} ${style.dim('quotes')}`);
+    printRow(`${renderProgressBar(projected90d, goal, 20, style)} ${style.dim(`${pctOfGoal.toFixed(0)}%`)}`, `${style.magenta('❝')} ${style.bold(formatNumber(stats7d.quotes))} ${style.dim('quotes')}`);
     const goalMsg = pctOfGoal >= 100 ? style.brightGreen('✓ On track!') : style.dim(`+${formatNumber(Math.round((goal/90)-dailyAvg))}/day needed`);
     printRow(goalMsg, `${style.yellow('🔖')} ${style.bold(formatNumber(stats7d.bookmarks))} ${style.dim('bookmarks')}`);
     printRow('', `${style.dim('Eng rate:')} ${style.bold(formatPercent(stats7d.engagementRate))}`);
@@ -306,7 +273,8 @@ async function getMeWithMetrics(accessToken: string): Promise<{ followers: numbe
     const { TwitterApi } = await import('twitter-api-v2');
     const client = new TwitterApi(accessToken);
     const result = await client.v2.me({ 'user.fields': ['public_metrics'] });
-    const metrics = (result.data as any).public_metrics;
+    const userWithMetrics = result.data as unknown as UserWithMetrics;
+    const metrics = userWithMetrics.public_metrics;
     return {
       followers: metrics?.followers_count || 0,
       following: metrics?.following_count || 0,
@@ -340,9 +308,10 @@ async function getRecentTweetsWithMetrics(accessToken: string, userId: string, c
       }
 
       for (const tweet of timeline.data.data) {
-        const organic = (tweet as any).organic_metrics || {};
-        const pub = (tweet as any).public_metrics || {};
-        const nonPub = (tweet as any).non_public_metrics || {};
+        const tweetWithMetrics = tweet as unknown as ApiTweetWithMetrics;
+        const organic = tweetWithMetrics.organic_metrics || {};
+        const pub = tweetWithMetrics.public_metrics || {};
+        const nonPub = tweetWithMetrics.non_public_metrics || {};
 
         const impressions = organic.impression_count || 0;
         const likes = pub.like_count || 0;
@@ -436,10 +405,4 @@ function getHourlyEngagement(tweets: TweetWithMetrics[]): { hour: number; avgEng
     hour,
     avgEngagement: data.count > 0 ? data.total / data.count : 0,
   }));
-}
-
-function formatHour(hour: number): string {
-  const ampm = hour >= 12 ? 'PM' : 'AM';
-  const h = hour % 12 || 12;
-  return `${h}${ampm}`;
 }
