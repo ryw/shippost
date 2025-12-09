@@ -1,15 +1,9 @@
 import { TwitterApi, TweetV2, UserV2 } from 'twitter-api-v2';
-
-interface TwitterApiError {
-  code?: number;
-  message?: string;
-  rateLimitError?: boolean;
-  rateLimit?: {
-    limit?: number;
-    remaining?: number;
-    reset?: number;
-  };
-}
+import type {
+  TweetWithMetrics,
+  UserWithMetrics,
+  TwitterApiErrorResponse,
+} from '../types/x-api.js';
 
 export class RateLimitError extends Error {
   resetAt?: Date;
@@ -21,7 +15,7 @@ export class RateLimitError extends Error {
   }
 }
 
-function handleApiError(error: TwitterApiError, context: string): never {
+function handleApiError(error: TwitterApiErrorResponse, context: string): never {
   // Check for rate limit (429)
   if (error.code === 429 || error.message?.includes('429') || error.rateLimitError) {
     const resetTime = error.rateLimit?.reset
@@ -110,7 +104,7 @@ export class XApiService {
 
       return tweets;
     } catch (error) {
-      handleApiError(error as TwitterApiError, 'Failed to fetch tweets');
+      handleApiError(error as TwitterApiErrorResponse, 'Failed to fetch tweets');
     }
   }
 
@@ -148,19 +142,21 @@ export class XApiService {
       const authorMap = new Map<string, { username: string; name: string; followersCount?: number }>();
       if (timeline.includes?.users) {
         for (const user of timeline.includes.users) {
+          const userWithMetrics = user as unknown as UserWithMetrics;
           authorMap.set(user.id, {
             username: user.username,
             name: user.name,
-            followersCount: (user as any).public_metrics?.followers_count,
+            followersCount: userWithMetrics.public_metrics?.followers_count,
           });
         }
       }
 
       for await (const tweet of timeline) {
         const author = tweet.author_id ? authorMap.get(tweet.author_id) : undefined;
-        const metrics = (tweet as any).public_metrics;
+        const tweetWithMetrics = tweet as unknown as TweetWithMetrics;
+        const metrics = tweetWithMetrics.public_metrics;
         // Use note_tweet.text for full text of long tweets, fallback to text
-        const noteTweet = (tweet as any).note_tweet;
+        const noteTweet = tweetWithMetrics.note_tweet;
         const fullText = noteTweet?.text || tweet.text;
         tweets.push({
           id: tweet.id,
@@ -182,7 +178,7 @@ export class XApiService {
 
       return tweets;
     } catch (error) {
-      handleApiError(error as TwitterApiError, 'Failed to fetch home timeline');
+      handleApiError(error as TwitterApiErrorResponse, 'Failed to fetch home timeline');
     }
   }
 
@@ -199,7 +195,7 @@ export class XApiService {
         createdAt: new Date().toISOString(),
       };
     } catch (error) {
-      handleApiError(error as TwitterApiError, 'Failed to post reply');
+      handleApiError(error as TwitterApiErrorResponse, 'Failed to post reply');
     }
   }
 
@@ -211,7 +207,7 @@ export class XApiService {
       const me = await this.client.v2.me();
       await this.client.v2.like(me.data.id, tweetId);
     } catch (error) {
-      handleApiError(error as TwitterApiError, 'Failed to like tweet');
+      handleApiError(error as TwitterApiErrorResponse, 'Failed to like tweet');
     }
   }
 
@@ -242,7 +238,8 @@ export class XApiService {
 
       for await (const tweet of timeline) {
         const tweetDate = new Date(tweet.created_at || '').toISOString().split('T')[0];
-        const impressions = (tweet as any).organic_metrics?.impression_count || 0;
+        const tweetWithMetrics = tweet as unknown as TweetWithMetrics;
+        const impressions = tweetWithMetrics.organic_metrics?.impression_count || 0;
         dailyMap.set(tweetDate, (dailyMap.get(tweetDate) || 0) + impressions);
       }
 
@@ -254,7 +251,7 @@ export class XApiService {
       const totalImpressions = dailyImpressions.reduce((sum, d) => sum + d.impressions, 0);
 
       return { dailyImpressions, totalImpressions };
-    } catch (error: any) {
+    } catch {
       // Return empty stats if we can't fetch (might not have access)
       return { dailyImpressions: [], totalImpressions: 0 };
     }
@@ -280,7 +277,8 @@ export class XApiService {
 
       for await (const tweet of timeline) {
         // Check if this tweet is a reply to another tweet
-        const referencedTweets = (tweet as any).referenced_tweets;
+        const tweetWithMetrics = tweet as unknown as TweetWithMetrics;
+        const referencedTweets = tweetWithMetrics.referenced_tweets;
         if (referencedTweets) {
           for (const ref of referencedTweets) {
             if (ref.type === 'replied_to') {
@@ -291,7 +289,7 @@ export class XApiService {
       }
 
       return repliedToIds;
-    } catch (error: any) {
+    } catch {
       // Return empty set on error - don't block the main flow
       return repliedToIds;
     }
@@ -313,7 +311,7 @@ export class XApiService {
 
     try {
       // Check user endpoint rate limit
-      const meResult = await this.client.v2.me() as any;
+      const meResult = await this.client.v2.me() as { data: unknown; rateLimit?: { limit: number; remaining: number; reset: number } };
       if (meResult.rateLimit) {
         status.user = {
           limit: meResult.rateLimit.limit,
@@ -327,7 +325,7 @@ export class XApiService {
 
     try {
       // Check timeline endpoint rate limit (minimal request)
-      const timelineResult = await this.client.v2.homeTimeline({ max_results: 10 }) as any;
+      const timelineResult = await this.client.v2.homeTimeline({ max_results: 10 }) as { data?: unknown; rateLimit?: { limit: number; remaining: number; reset: number } };
       if (timelineResult.rateLimit) {
         status.timeline = {
           limit: timelineResult.rateLimit.limit,
