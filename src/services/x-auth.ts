@@ -185,7 +185,8 @@ export class XAuthService {
     }
 
     store.x = tokens;
-    writeFileSync(this.tokensPath, JSON.stringify(store, null, 2));
+    // Write with restrictive permissions (owner read/write only) to protect OAuth tokens
+    writeFileSync(this.tokensPath, JSON.stringify(store, null, 2), { mode: 0o600 });
   }
 
   /**
