@@ -69,6 +69,7 @@ export interface Tweet {
   replyCount?: number;
   retweetCount?: number;
   isReply?: boolean;
+  conversationId?: string;
 }
 
 export class XApiService {
@@ -362,6 +363,78 @@ export class XApiService {
       });
     } catch (error) {
       handleApiError(error as TwitterApiError, 'Failed to fetch tweets with engagement');
+    }
+  }
+
+  /**
+   * Fetch a thread (conversation) starting from a tweet
+   * Returns all tweets in the thread by the same author, sorted chronologically
+   */
+  async getThread(tweetId: string): Promise<Tweet[]> {
+    try {
+      // First, get the tweet to find its conversation_id
+      const tweetResult = await this.client.v2.singleTweet(tweetId, {
+        'tweet.fields': ['conversation_id', 'author_id', 'created_at', 'text', 'public_metrics', 'note_tweet'],
+      });
+
+      const rootTweet = tweetResult.data;
+      const conversationId = (rootTweet as TweetV2WithMetrics).conversation_id;
+      const authorId = rootTweet.author_id;
+
+      if (!conversationId || !authorId) {
+        // No conversation, return just this tweet
+        const noteTweet = (rootTweet as TweetV2WithMetrics).note_tweet;
+        const metrics = (rootTweet as TweetV2WithMetrics).public_metrics;
+        return [{
+          id: rootTweet.id,
+          text: noteTweet?.text || rootTweet.text,
+          createdAt: rootTweet.created_at || new Date().toISOString(),
+          authorId,
+          likeCount: metrics?.like_count,
+          replyCount: metrics?.reply_count,
+          retweetCount: metrics?.retweet_count,
+          conversationId,
+        }];
+      }
+
+      // Search for all tweets in this conversation by this author
+      const searchResult = await this.client.v2.search(
+        `conversation_id:${conversationId} from:${authorId}`,
+        {
+          'tweet.fields': ['created_at', 'text', 'public_metrics', 'note_tweet', 'author_id'],
+          max_results: 100,
+        }
+      );
+
+      const tweets: Tweet[] = [];
+      const me = await this.getMe();
+
+      for await (const tweet of searchResult) {
+        const tweetWithMetrics = tweet as TweetV2WithMetrics;
+        const noteTweet = tweetWithMetrics.note_tweet;
+        const metrics = tweetWithMetrics.public_metrics;
+
+        tweets.push({
+          id: tweet.id,
+          text: noteTweet?.text || tweet.text,
+          createdAt: tweet.created_at || new Date().toISOString(),
+          authorId: tweet.author_id,
+          authorUsername: me.username,
+          authorName: me.name,
+          likeCount: metrics?.like_count,
+          replyCount: metrics?.reply_count,
+          retweetCount: metrics?.retweet_count,
+          conversationId,
+        });
+      }
+
+      // Sort chronologically (oldest first for thread order)
+      return tweets.sort((a, b) =>
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      );
+    } catch (error) {
+      // If thread fetch fails, return empty array (caller can fall back to single tweet)
+      return [];
     }
   }
 

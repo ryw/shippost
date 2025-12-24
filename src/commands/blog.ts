@@ -350,30 +350,86 @@ async function promptForDecision(): Promise<'use' | 'snooze' | 'skip' | 'quit'> 
   });
 }
 
-function generateBlogPrompt(tweet: Tweet): string {
-  const isReply = tweet.isReply ? 'This is a reply to another tweet.' : 'This is an original post.';
+function generateBlogPrompt(tweet: Tweet, threadTweets: Tweet[]): string {
+  const isThread = threadTweets.length > 1;
+  const threadContent = threadTweets.map((t, i) => `[${i + 1}] ${t.text}`).join('\n\n');
 
-  return `You are converting a successful X (Twitter) post into a blog post draft.
+  const sourceDescription = isThread
+    ? `This is a thread with ${threadTweets.length} tweets.`
+    : tweet.isReply
+      ? 'This is a reply to another tweet.'
+      : 'This is an original post.';
 
-The original X post (${isReply}):
+  const totalEngagement = threadTweets.reduce(
+    (sum, t) => sum + (t.likeCount || 0) + (t.replyCount || 0) + (t.retweetCount || 0),
+    0
+  );
+
+  return `You are converting a successful X (Twitter) ${isThread ? 'thread' : 'post'} into a blog post draft.
+
+${sourceDescription}
+
+The content:
 """
-${tweet.text}
+${threadContent}
 """
 
-Engagement: ${tweet.likeCount || 0} likes, ${tweet.replyCount || 0} replies, ${tweet.retweetCount || 0} retweets
+Total engagement: ${totalEngagement} (likes + replies + retweets combined)
 
 Create a blog post that:
-1. Expands on the idea from the tweet
+1. Expands on the ideas from the ${isThread ? 'thread' : 'tweet'}
 2. Adds context, examples, or deeper explanation
 3. Maintains the voice and tone of the original
-4. Is 300-800 words
+4. Is 500-1200 words
 5. Has a compelling title
+6. IMPORTANT: Include {{EMBED_PLACEHOLDER}} markers where you want X post embeds to appear (3-5 embeds total, spread throughout the post). The first embed should appear early to show the original inspiration.
 
 Format your response as:
 
 TITLE: [Your title here]
 
-[Blog content in markdown]`;
+[Blog content in markdown with {{EMBED_PLACEHOLDER}} markers where embeds should go]`;
+}
+
+function generateXEmbed(tweet: Tweet): string {
+  // Standard X/Twitter embed format that works with most frameworks
+  return `<blockquote class="twitter-tweet"><a href="https://x.com/${tweet.authorUsername}/status/${tweet.id}"></a></blockquote>`;
+}
+
+function insertEmbeds(content: string, threadTweets: Tweet[]): string {
+  // Select 3-5 tweets for embedding, always including the first (original)
+  const embedCount = Math.min(Math.max(3, Math.ceil(threadTweets.length / 2)), 5);
+  const step = Math.max(1, Math.floor(threadTweets.length / embedCount));
+
+  const selectedTweets: Tweet[] = [];
+  for (let i = 0; i < threadTweets.length && selectedTweets.length < embedCount; i += step) {
+    selectedTweets.push(threadTweets[i]);
+  }
+
+  // Always include first tweet if not already
+  if (selectedTweets.length > 0 && selectedTweets[0].id !== threadTweets[0].id) {
+    selectedTweets.unshift(threadTweets[0]);
+    if (selectedTweets.length > 5) selectedTweets.pop();
+  }
+
+  // Replace placeholders with embeds
+  let result = content;
+  let embedIndex = 0;
+
+  while (result.includes('{{EMBED_PLACEHOLDER}}') && embedIndex < selectedTweets.length) {
+    result = result.replace('{{EMBED_PLACEHOLDER}}', generateXEmbed(selectedTweets[embedIndex]));
+    embedIndex++;
+  }
+
+  // Remove any remaining placeholders
+  result = result.replace(/\{\{EMBED_PLACEHOLDER\}\}/g, '');
+
+  // Add Twitter widget script at the end if we have embeds
+  if (embedIndex > 0) {
+    result += '\n\n<script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>';
+  }
+
+  return result;
 }
 
 function generateFrontmatter(title: string, tweet: Tweet, frameworkConfig: FrameworkConfig): string {
@@ -604,12 +660,28 @@ export async function blogCommand(options: BlogFromXOptions): Promise<void> {
         continue;
       }
 
+      // Fetch thread content
+      logger.info(style.cyan('Fetching thread...'));
+      let threadTweets = await apiService.getThread(tweet.id);
+
+      // Fall back to single tweet if thread fetch fails
+      if (threadTweets.length === 0) {
+        threadTweets = [tweet];
+      }
+
+      if (threadTweets.length > 1) {
+        logger.info(style.dim(`Found ${threadTweets.length} tweets in thread`));
+      }
+
       // Generate blog post
       logger.info(style.cyan('Generating blog post...'));
 
-      const prompt = generateBlogPrompt(tweet);
+      const prompt = generateBlogPrompt(tweet, threadTweets);
       const response = await llm.generate(prompt);
       const { title, content } = parseBlogResponse(response);
+
+      // Insert X embeds into content
+      const contentWithEmbeds = insertEmbeds(content, threadTweets);
 
       // Create filename and path using framework conventions
       const filename = generateFilename(title, frameworkConfig, useMdx);
@@ -617,7 +689,7 @@ export async function blogCommand(options: BlogFromXOptions): Promise<void> {
 
       // Write file with frontmatter
       const frontmatter = generateFrontmatter(title, tweet, frameworkConfig);
-      writeFileSync(filepath, frontmatter + content);
+      writeFileSync(filepath, frontmatter + contentWithEmbeds);
 
       used++;
       markProcessed(cwd, tweet.id);
