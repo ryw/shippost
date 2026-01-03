@@ -6,6 +6,18 @@ import { join } from 'path';
 import type { XTokens, XTokensStore } from '../types/x-tokens.js';
 import { logger } from '../utils/logger.js';
 
+/**
+ * Escape HTML entities to prevent XSS attacks
+ */
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 // Port 9876 to avoid conflicts with common dev servers (3000, 8080, etc.)
 const CALLBACK_PORT = 9876;
 const REDIRECT_URI = `http://127.0.0.1:${CALLBACK_PORT}/callback`;
@@ -101,7 +113,7 @@ export class XAuthService {
               <html>
                 <body>
                   <h1>Authorization Failed</h1>
-                  <p>Error: ${error}</p>
+                  <p>Error: ${escapeHtml(error)}</p>
                   <p>You can close this window.</p>
                 </body>
               </html>
