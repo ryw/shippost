@@ -19,6 +19,7 @@ import { statsCommand } from './commands/stats.js';
 import { syncPromptsCommand } from './commands/sync-prompts.js';
 import { lastInputCommand } from './commands/last-input.js';
 import { blogCommand } from './commands/blog.js';
+import { granolaSyncCommand } from './commands/granola-sync.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -109,5 +110,12 @@ program
   .option('--count <n>', 'Number of posts to fetch (max 100)', parseInt, 50)
   .option('--output <dir>', 'Output directory for drafts', 'content/drafts')
   .action(blogCommand);
+
+program
+  .command('granola-sync')
+  .description('Sync Granola meeting transcripts to input/ directory')
+  .option('--count <n>', 'Number of transcripts to sync', parseInt)
+  .option('--force', 'Re-sync all transcripts (ignore previous sync state)')
+  .action(granolaSyncCommand);
 
 program.parse();
