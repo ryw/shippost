@@ -103,19 +103,41 @@ function toSnakeCase(str: string): string {
     .replace(/^_|_$/g, '');        // Trim leading/trailing underscores
 }
 
+/**
+ * Clean up Granola meeting titles by removing common prefixes and user names
+ * Works for any user - extracts participant names dynamically
+ */
+function cleanMeetingTitle(title: string): string {
+  let name = title;
+
+  // Remove common meeting platform prefixes
+  // e.g., "Virtual Meeting (Zoom) between Alice and Bob" -> "Alice and Bob"
+  name = name.replace(/^Virtual Meeting \(.*?\) between /i, '');
+  name = name.replace(/^Meeting between /i, '');
+  name = name.replace(/^Call with /i, '');
+  name = name.replace(/^1:1 with /i, '');
+
+  // For two-person meetings, take just the other person's name
+  // "Alice and Bob" -> "Alice" or "Bob" (takes first)
+  // This works regardless of who the user is
+  const andMatch = name.match(/^(.+?) and (.+)$/i);
+  if (andMatch) {
+    // Take the shorter name (usually a person's name vs "You" or username)
+    const [, person1, person2] = andMatch;
+    name = person1.length <= person2.length ? person1 : person2;
+  }
+
+  return name.trim();
+}
+
 function generateFilename(doc: GranolaDocument): string {
   const date = doc.created_at.slice(0, 10); // YYYY-MM-DD
 
-  // Extract meaningful name from title
-  let name = doc.title;
-
-  // Remove common prefixes like "Virtual Meeting (Zoom) between X and Y"
-  name = name.replace(/^Virtual Meeting \(.*?\) between /i, '');
-  name = name.replace(/ and Ry Walker$/i, '');
-  name = name.replace(/^Ry Walker and /i, '');
+  // Clean up the meeting title
+  const cleanedTitle = cleanMeetingTitle(doc.title);
 
   // Truncate long names
-  const snakeName = toSnakeCase(name).slice(0, 50);
+  const snakeName = toSnakeCase(cleanedTitle).slice(0, 50);
 
   return `${date}_${snakeName}.txt`;
 }
