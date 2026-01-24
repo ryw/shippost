@@ -215,8 +215,20 @@ export class StrategySelector {
       return generalPurpose;
     }
 
-    // Randomly select from general-purpose
-    const shuffled = [...generalPurpose].sort(() => Math.random() - 0.5);
+    // Randomly select from general-purpose using Fisher-Yates shuffle
+    const shuffled = this.fisherYatesShuffle([...generalPurpose]);
     return shuffled.slice(0, count);
+  }
+
+  /**
+   * Fisher-Yates (Knuth) shuffle for unbiased randomization
+   * The naive sort(() => Math.random() - 0.5) produces biased results
+   */
+  private fisherYatesShuffle<T>(array: T[]): T[] {
+    for (let i = array.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array;
   }
 }
