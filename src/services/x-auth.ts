@@ -3,6 +3,7 @@ import { TwitterApi } from 'twitter-api-v2';
 import open from 'open';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join } from 'path';
+import { createInterface } from 'readline';
 import type { XTokens, XTokensStore } from '../types/x-tokens.js';
 import { logger } from '../utils/logger.js';
 
@@ -26,11 +27,13 @@ const SCOPES = ['tweet.read', 'tweet.write', 'users.read', 'like.write', 'offlin
 export class XAuthService {
   private cwd: string;
   private clientId: string;
+  private clientSecret?: string;
   private tokensPath: string;
 
-  constructor(cwd: string, clientId: string) {
+  constructor(cwd: string, clientId: string, clientSecret?: string) {
     this.cwd = cwd;
     this.clientId = clientId;
+    this.clientSecret = clientSecret || process.env.TWITTER_CLIENT_SECRET;
     this.tokensPath = join(cwd, '.shippost-tokens.json');
   }
 
@@ -38,10 +41,14 @@ export class XAuthService {
    * Start OAuth flow and get access token
    */
   async authorize(): Promise<XTokens> {
-    // Create Twitter API client
-    const client = new TwitterApi({
+    // Create Twitter API client with client secret if available (for confidential clients)
+    const clientConfig: { clientId: string; clientSecret?: string } = {
       clientId: this.clientId,
-    });
+    };
+    if (this.clientSecret) {
+      clientConfig.clientSecret = this.clientSecret;
+    }
+    const client = new TwitterApi(clientConfig);
 
     // Generate auth link (PKCE is handled automatically by the library)
     const { url: authUrl, codeVerifier, state } = client.generateOAuth2AuthLink(REDIRECT_URI, {
@@ -95,9 +102,75 @@ export class XAuthService {
   }
 
   /**
+   * Check if we're in a headless/terminal-only environment
+   */
+  private isHeadless(): boolean {
+    return !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY && process.platform !== 'darwin' && process.platform !== 'win32';
+  }
+
+  /**
+   * Prompt user to paste the callback URL and extract the auth code
+   */
+  private async getCodeFromManualInput(expectedState: string, authUrl: string): Promise<string> {
+    logger.step('Terminal-only environment detected. Manual authentication required.');
+    logger.blank();
+    logger.info('1. Visit this URL in your browser:');
+    logger.blank();
+    console.log(authUrl);
+    logger.blank();
+    logger.info('2. Authorize the app');
+    logger.info('3. You\'ll be redirected to a page that won\'t load (that\'s expected)');
+    logger.info('4. Copy the FULL URL from your browser\'s address bar');
+    logger.info('   It will look like: http://127.0.0.1:9876/callback?state=...&code=...');
+    logger.blank();
+
+    const rl = createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+
+    return new Promise((resolve, reject) => {
+      rl.question('Paste the callback URL here: ', (input) => {
+        rl.close();
+        
+        try {
+          const callbackUrl = new URL(input.trim());
+          const code = callbackUrl.searchParams.get('code');
+          const state = callbackUrl.searchParams.get('state');
+          const error = callbackUrl.searchParams.get('error');
+
+          if (error) {
+            reject(new Error(`Authorization failed: ${error}`));
+            return;
+          }
+
+          if (!code) {
+            reject(new Error('No authorization code found in URL. Make sure you copied the full URL.'));
+            return;
+          }
+
+          if (state !== expectedState) {
+            reject(new Error('State mismatch. Please try again from the beginning.'));
+            return;
+          }
+
+          resolve(code);
+        } catch {
+          reject(new Error('Invalid URL. Please paste the complete callback URL from your browser.'));
+        }
+      });
+    });
+  }
+
+  /**
    * Start local HTTP server to receive OAuth callback
    */
   private startCallbackServer(expectedState: string, authUrl: string): Promise<string> {
+    // In headless environments, use manual input instead of callback server
+    if (this.isHeadless()) {
+      return this.getCodeFromManualInput(expectedState, authUrl);
+    }
+
     return new Promise((resolve, reject) => {
       const server = createServer((req: IncomingMessage, res: ServerResponse) => {
         const url = new URL(req.url || '', `http://${req.headers.host}`);
@@ -218,9 +291,13 @@ export class XAuthService {
       throw new Error('No refresh token available');
     }
 
-    const client = new TwitterApi({
+    const clientConfig: { clientId: string; clientSecret?: string } = {
       clientId: this.clientId,
-    });
+    };
+    if (this.clientSecret) {
+      clientConfig.clientSecret = this.clientSecret;
+    }
+    const client = new TwitterApi(clientConfig);
 
     const {
       accessToken,
