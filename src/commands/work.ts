@@ -91,7 +91,8 @@ function findInputFiles(inputDir: string): string[] {
       }
     }
 
-    return textFiles;
+    // Sort by filename descending (newest first, since files are named YYYY-MM-DD_...)
+    return textFiles.sort((a, b) => b.localeCompare(a));
   } catch (error) {
     logger.error(`Failed to read input directory: ${(error as Error).message}`);
     return [];
