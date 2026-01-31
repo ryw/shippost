@@ -399,7 +399,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
 
                   // Show banger score if available
                   if (options.verbose) {
-                    logger.info(`    ✓ Generated (banger: ${evaluation.score}/10)`);
+                    logger.info(`    ✓ Generated (banger: ${evaluation.score}/99)`);
                   }
                 }
               } catch (evalError) {
@@ -419,7 +419,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
               // Display the generated post
               logger.blank();
               const bangerInfo = post.metadata.bangerScore
-                ? ` [banger: ${post.metadata.bangerScore}/10]`
+                ? ` [banger: ${post.metadata.bangerScore}/99]`
                 : '';
               logger.info(`  📝 Post ${i + 1}: ${strategy.name}${bangerInfo}`);
               logger.info('  ' + '─'.repeat(60));
@@ -492,7 +492,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
               post.metadata.bangerEvaluation = evaluation;
 
               if (options.verbose) {
-                logger.info(`  ${progress} ✓ Saved (banger: ${evaluation.score}/10)`);
+                logger.info(`  ${progress} ✓ Saved (banger: ${evaluation.score}/99)`);
               }
             }
           } catch (evalError) {
@@ -507,7 +507,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
           // Display the generated post
           logger.blank();
           const bangerInfo = post.metadata.bangerScore
-            ? ` [banger: ${post.metadata.bangerScore}/10]`
+            ? ` [banger: ${post.metadata.bangerScore}/99]`
             : '';
           logger.info(`  📝 Post ${i + 1}${bangerInfo}`);
           logger.info('  ' + '─'.repeat(60));

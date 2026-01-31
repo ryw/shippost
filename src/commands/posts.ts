@@ -28,8 +28,8 @@ function displayPost(post: Post, index: number, total: number): void {
   }
   if (post.metadata.bangerScore) {
     const score = post.metadata.bangerScore;
-    const emoji = score >= 8 ? '🔥' : score >= 6 ? '✨' : '📝';
-    metadata.push(`${emoji} Banger: ${score}/10`);
+    const emoji = score >= 70 ? '🔥' : score >= 50 ? '✨' : '📝';
+    metadata.push(`${emoji} Banger: ${score}/99`);
   }
   metadata.push(`Model: ${post.metadata.model}`);
   metadata.push(`Created: ${formatTimestamp(post.timestamp)}`);
@@ -231,10 +231,10 @@ export async function postsCommand(options: PostsOptions): Promise<void> {
     if (withScores.length > 0) {
       const avgScore =
         withScores.reduce((sum, p) => sum + (p.metadata.bangerScore || 0), 0) / withScores.length;
-      logger.info(`  Average banger score: ${avgScore.toFixed(1)}/10`);
+      logger.info(`  Average banger score: ${avgScore.toFixed(1)}/99`);
 
-      const highQuality = withScores.filter((p) => (p.metadata.bangerScore || 0) >= 8);
-      logger.info(`  High quality posts (8+): ${highQuality.length}`);
+      const highQuality = withScores.filter((p) => (p.metadata.bangerScore || 0) >= 70);
+      logger.info(`  High quality posts (70+): ${highQuality.length}`);
     }
 
     // Strategy breakdown
