@@ -1,7 +1,7 @@
 import { join } from 'path';
 import { readlineSync } from '../utils/readline.js';
 import { FileSystemService } from '../services/file-system.js';
-import { OllamaService } from '../services/ollama.js';
+import { createLLMService } from '../services/llm-factory.js';
 import { XAuthService } from '../services/x-auth.js';
 import { XApiService } from '../services/x-api.js';
 import { logger } from '../utils/logger.js';
@@ -29,10 +29,10 @@ export async function analyzeXCommand(options: AnalyzeXOptions): Promise<void> {
     const fs = new FileSystemService(cwd);
     const config = fs.loadConfig();
 
-    // Initialize Ollama service
-    const ollama = new OllamaService(config);
-    await ollama.ensureAvailable();
-    logger.success(`Connected to Ollama (model: ${ollama.getModelName()})`);
+    // Initialize LLM service
+    const llm = createLLMService(config);
+    await llm.ensureAvailable();
+    logger.success(`Connected to ${config.llm.provider} (model: ${llm.getModelName()})`);
 
     // Step 2: Configure X API
     logger.section('[2/5] Configuring X API...');
@@ -100,7 +100,7 @@ export async function analyzeXCommand(options: AnalyzeXOptions): Promise<void> {
     const prompt = buildStyleAnalysisPrompt(analysisPrompt, tweets);
     logger.info(`Analyzing ${tweets.length} tweets to understand your style...`);
 
-    const response = await ollama.generate(prompt);
+    const response = await llm.generate(prompt);
     const styleGuide = parseStyleGuide(response);
 
     logger.success('Style analysis complete!');
