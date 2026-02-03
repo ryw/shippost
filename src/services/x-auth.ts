@@ -6,6 +6,7 @@ import { join } from 'path';
 import { createInterface } from 'readline';
 import type { XTokens, XTokensStore } from '../types/x-tokens.js';
 import { logger } from '../utils/logger.js';
+import { SecureTokenStorage, type EncryptedData } from '../utils/secure-token-storage.js';
 
 /**
  * Escape HTML entities to prevent XSS attacks
@@ -24,17 +25,26 @@ const CALLBACK_PORT = 9876;
 const REDIRECT_URI = `http://127.0.0.1:${CALLBACK_PORT}/callback`;
 const SCOPES = ['tweet.read', 'tweet.write', 'users.read', 'like.write', 'offline.access'];
 
+/**
+ * Encrypted token store format
+ */
+interface EncryptedTokenStore {
+  x?: EncryptedData;
+}
+
 export class XAuthService {
   private cwd: string;
   private clientId: string;
   private clientSecret?: string;
   private tokensPath: string;
+  private secureStorage: SecureTokenStorage;
 
   constructor(cwd: string, clientId: string, clientSecret?: string) {
     this.cwd = cwd;
     this.clientId = clientId;
     this.clientSecret = clientSecret || process.env.TWITTER_CLIENT_SECRET;
     this.tokensPath = join(cwd, '.shippost-tokens.json');
+    this.secureStorage = new SecureTokenStorage();
   }
 
   /**
@@ -240,7 +250,10 @@ export class XAuthService {
   }
 
   /**
-   * Load tokens from disk
+   * Load tokens from disk.
+   *
+   * Handles both encrypted tokens (new format) and plaintext tokens (legacy format).
+   * If plaintext tokens are found, they are automatically migrated to encrypted format.
    */
   loadTokens(): XTokens | null {
     if (!existsSync(this.tokensPath)) {
@@ -249,29 +262,47 @@ export class XAuthService {
 
     try {
       const data = readFileSync(this.tokensPath, 'utf-8');
-      const store: XTokensStore = JSON.parse(data);
-      return store.x || null;
-    } catch (error) {
+      const store = JSON.parse(data);
+
+      // Check if we have encrypted tokens (new format)
+      if (store.x && this.secureStorage.isEncrypted(store.x)) {
+        const tokens = this.secureStorage.decrypt<XTokens>(store.x);
+        if (!tokens) {
+          // Decryption failed - tokens may have been created on a different machine
+          logger.warn('Failed to decrypt tokens. You may need to re-authenticate.');
+          return null;
+        }
+        return tokens;
+      }
+
+      // Legacy plaintext format - migrate to encrypted
+      const legacyStore = store as XTokensStore;
+      if (legacyStore.x) {
+        logger.info('Migrating tokens to encrypted storage...');
+        this.saveTokens(legacyStore.x);
+        return legacyStore.x;
+      }
+
+      return null;
+    } catch {
       return null;
     }
   }
 
   /**
-   * Save tokens to disk
+   * Save tokens to disk with encryption.
+   *
+   * Tokens are encrypted using AES-256-GCM with a machine-specific key,
+   * providing defense in depth alongside file permissions.
    */
   private saveTokens(tokens: XTokens): void {
-    let store: XTokensStore = {};
+    // Encrypt the tokens before storing
+    const encryptedTokens = this.secureStorage.encrypt(tokens);
 
-    if (existsSync(this.tokensPath)) {
-      try {
-        const data = readFileSync(this.tokensPath, 'utf-8');
-        store = JSON.parse(data);
-      } catch (error) {
-        // Ignore parse errors, will overwrite
-      }
-    }
+    const store: EncryptedTokenStore = {
+      x: encryptedTokens,
+    };
 
-    store.x = tokens;
     // Write with restrictive permissions (owner read/write only) to protect OAuth tokens
     writeFileSync(this.tokensPath, JSON.stringify(store, null, 2), { mode: 0o600 });
   }
