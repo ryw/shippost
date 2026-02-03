@@ -1,6 +1,7 @@
 import { createInterface } from 'readline';
 import { writeFileSync, readFileSync, existsSync, mkdirSync, readdirSync } from 'fs';
 import { join, basename, extname } from 'path';
+import { Command } from 'commander';
 import { XAuthService } from '../services/x-auth.js';
 import { XApiService, Tweet } from '../services/x-api.js';
 import { createLLMService } from '../services/llm-factory.js';
@@ -484,7 +485,7 @@ function loadConfig(cwd: string): T2pConfig | null {
   return null;
 }
 
-export async function blogCommand(options: BlogFromXOptions): Promise<void> {
+export async function blogCommand(options: BlogFromXOptions, command: Command): Promise<void> {
   const cwd = process.cwd();
   const { style } = logger;
 
@@ -506,15 +507,19 @@ export async function blogCommand(options: BlogFromXOptions): Promise<void> {
     }
 
     // Detect framework and setup output directory
-    // Priority: CLI --output > config blog.outputDir > auto-detect > framework default
+    // Priority: CLI --output (explicit) > config blog.outputDir > CLI default > auto-detect > framework default
     const framework = detectFramework(cwd);
     const frameworkConfig = FRAMEWORK_CONFIGS[framework];
 
     let outputDir: string;
-    if (options.output) {
+    const outputExplicitlyProvided = command.getOptionValueSource('output') === 'cli';
+    if (outputExplicitlyProvided && options.output) {
       outputDir = options.output;
     } else if (config.blog?.outputDir) {
       outputDir = config.blog.outputDir;
+    } else if (options.output) {
+      // CLI default
+      outputDir = options.output;
     } else {
       // Try to find existing content directory, or use framework default
       const existingDir = findExistingContentDir(cwd, framework);
