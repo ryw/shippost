@@ -34,7 +34,17 @@ function loadGranolaAuth(): string {
   }
 
   const authData = JSON.parse(readFileSync(authPath, 'utf-8'));
+
+  if (!authData || typeof authData.workos_tokens !== 'string') {
+    throw new Error('Invalid Granola auth file: missing or invalid workos_tokens');
+  }
+
   const tokens = JSON.parse(authData.workos_tokens);
+
+  if (!tokens || typeof tokens.access_token !== 'string') {
+    throw new Error('Invalid Granola auth file: missing access_token in workos_tokens');
+  }
+
   return tokens.access_token;
 }
 
@@ -45,14 +55,28 @@ function loadGranolaDocuments(): Record<string, GranolaDocument> {
   }
 
   const data = JSON.parse(readFileSync(cachePath, 'utf-8'));
+
+  if (!data || typeof data.cache !== 'string') {
+    throw new Error('Invalid Granola cache file: missing or invalid cache data');
+  }
+
   const cache = JSON.parse(data.cache);
+
+  if (!cache || !cache.state || typeof cache.state.documents !== 'object') {
+    throw new Error('Invalid Granola cache file: missing documents in cache state');
+  }
+
   return cache.state.documents;
 }
 
 function loadSyncState(cwd: string): GranolaSyncState {
   const statePath = join(cwd, STATE_FILE);
   if (existsSync(statePath)) {
-    return JSON.parse(readFileSync(statePath, 'utf-8'));
+    const state = JSON.parse(readFileSync(statePath, 'utf-8'));
+    // Validate structure and return default if invalid
+    if (state && typeof state.syncedDocuments === 'object') {
+      return state;
+    }
   }
   return { syncedDocuments: {} };
 }
