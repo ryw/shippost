@@ -25,6 +25,7 @@ interface BlogFromXOptions {
   count?: number;
   output?: string;
   setup?: boolean;
+  auto?: boolean;
 }
 
 type Framework = 'hugo' | 'jekyll' | 'astro' | 'nextjs' | 'gatsby' | 'eleventy' | 'unknown';
@@ -598,23 +599,39 @@ export async function blogCommand(options: BlogFromXOptions, command: Command): 
 
     logger.success(`Found ${tweets.length} posts to review`);
 
-    // Interactive review
+    // Interactive review (or auto mode)
     logger.section('[4/4] Review your posts...');
-    logger.info(`${style.green('⏎/u')}se → generate blog draft`);
-    logger.info(`${style.yellow('z')}snooze → review again in ${SNOOZE_DAYS} days`);
-    logger.info(`${style.dim('s')}kip → never show again`);
-    logger.info(`${style.red('q')}uit → exit`);
+    
+    // In auto mode, limit to --count posts; in interactive mode, show all
+    const maxToProcess = options.auto ? (options.count || 1) : tweets.length;
+    
+    if (options.auto) {
+      logger.info(`Auto mode: processing top ${Math.min(tweets.length, maxToProcess)} post${maxToProcess === 1 ? '' : 's'} by engagement`);
+    } else {
+      logger.info(`${style.green('⏎/u')}se → generate blog draft`);
+      logger.info(`${style.yellow('z')}snooze → review again in ${SNOOZE_DAYS} days`);
+      logger.info(`${style.dim('s')}kip → never show again`);
+      logger.info(`${style.red('q')}uit → exit`);
+    }
 
     let used = 0;
     let snoozed = 0;
     let skipped = 0;
 
-    for (let i = 0; i < tweets.length; i++) {
+    for (let i = 0; i < Math.min(tweets.length, maxToProcess); i++) {
       const tweet = tweets[i];
 
       displayTweet(tweet, i, tweets.length);
 
-      const decision = await promptForDecision();
+      let decision: 'use' | 'snooze' | 'skip' | 'quit';
+      
+      if (options.auto) {
+        // Auto mode: automatically use all tweets
+        decision = 'use';
+        logger.info(style.green('Auto-selecting for blog draft...'));
+      } else {
+        decision = await promptForDecision();
+      }
 
       if (decision === 'quit') {
         logger.blank();

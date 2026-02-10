@@ -109,6 +109,7 @@ program
   .description('Generate blog post drafts from your successful X posts')
   .option('--count <n>', 'Number of posts to fetch (max 100)', parseInt, 50)
   .option('--output <dir>', 'Output directory for drafts', 'content/drafts')
+  .option('--auto', 'Auto-select top posts by engagement (no prompts)')
   .action(blogCommand);
 
 program

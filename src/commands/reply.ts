@@ -1,5 +1,4 @@
 import { createInterface } from 'readline';
-import { spawnSync } from 'child_process';
 import { writeFileSync, readFileSync, unlinkSync, existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -12,6 +11,7 @@ import { isShippostProject } from '../utils/validation.js';
 import { NotInitializedError } from '../utils/errors.js';
 import { readlineSync } from '../utils/readline.js';
 import { formatCount, formatFollowerCount, formatTimeAgo } from '../utils/format.js';
+import { openInEditor, getEditorDisplayName } from '../utils/editor.js';
 
 const SKIP_CACHE_FILE = '.shippost-skipped-tweets.json';
 const SKIP_CACHE_MAX_AGE = 24 * 60 * 60 * 1000; // 24 hours
@@ -150,17 +150,20 @@ function editReply(currentReply: string): string {
 `;
   writeFileSync(tmpFile, header + currentReply, 'utf8');
 
-  // Determine editor (same order as git)
-  const editor = process.env.VISUAL || process.env.EDITOR || 'vim';
+  // Get safe editor (validates VISUAL/EDITOR env vars to prevent command injection)
+  const editorName = getEditorDisplayName();
 
   logger.blank();
-  logger.info(`${style.cyan('✎')} ${style.bold('Opening editor...')} ${style.dim(`(${editor})`)}`);
+  logger.info(`${style.cyan('✎')} ${style.bold('Opening editor...')} ${style.dim(`(${editorName})`)}`);
 
   try {
-    // Spawn editor synchronously
-    const result = spawnSync(editor, [tmpFile], {
-      stdio: 'inherit',
-    });
+    // Spawn editor synchronously using safe editor utility
+    const result = openInEditor(tmpFile);
+
+    if (result.error) {
+      logger.error(`Failed to open editor: ${result.error.message}`);
+      return currentReply;
+    }
 
     if (result.status !== 0) {
       logger.warn('Editor exited with non-zero status, keeping original');
