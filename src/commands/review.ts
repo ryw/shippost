@@ -93,8 +93,33 @@ export async function reviewCommand(options: ReviewOptions): Promise<void> {
       );
     }
 
-    // Sort by banger score descending (highest first)
-    postsToReview.sort((a, b) => (b.metadata.bangerScore || 0) - (a.metadata.bangerScore || 0));
+    // Interleave: alternate between highest banger score and newest posts
+    // This ensures newly processed posts get seen alongside top-scored ones
+    const byScore = [...postsToReview].sort((a, b) => (b.metadata.bangerScore || 0) - (a.metadata.bangerScore || 0));
+    const byNewest = [...postsToReview].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    const seen = new Set<string>();
+    const interleaved: Post[] = [];
+    let si = 0, ni = 0;
+    let pickScore = true;
+    while (interleaved.length < postsToReview.length) {
+      if (pickScore) {
+        while (si < byScore.length && seen.has(byScore[si].id)) si++;
+        if (si < byScore.length) {
+          seen.add(byScore[si].id);
+          interleaved.push(byScore[si]);
+          si++;
+        }
+      } else {
+        while (ni < byNewest.length && seen.has(byNewest[ni].id)) ni++;
+        if (ni < byNewest.length) {
+          seen.add(byNewest[ni].id);
+          interleaved.push(byNewest[ni]);
+          ni++;
+        }
+      }
+      pickScore = !pickScore;
+    }
+    postsToReview = interleaved;
 
     if (postsToReview.length === 0) {
       const kept = allPosts.filter((p) => p.status === 'keep').length;
@@ -112,7 +137,7 @@ export async function reviewCommand(options: ReviewOptions): Promise<void> {
     if (options.minScore) {
       logger.info(`Filtered to posts with score >= ${options.minScore}`);
     }
-    logger.info('Posts sorted by banger score (highest first)');
+    logger.info('Posts alternate: highest score ↔ newest first');
 
     // Review loop
     let reviewed = 0;
