@@ -47,7 +47,7 @@ export async function analyzeXCommand(options: AnalyzeXOptions): Promise<void> {
       logger.blank();
       logger.info('Step 2: Create a new app and enable OAuth 2.0');
       logger.info('→ Type of App: Select "Native App" (not Web App or Bot)');
-      logger.info('→ Set redirect URI to: http://127.0.0.1:3000/callback');
+      logger.info('→ Set redirect URI to: http://127.0.0.1:9876/callback');
       logger.info('→ Enable scopes: tweet.read, users.read, offline.access');
       logger.blank();
 
