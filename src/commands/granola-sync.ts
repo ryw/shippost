@@ -158,7 +158,7 @@ function generateFilename(doc: GranolaDocument): string {
   const date = doc.created_at.slice(0, 10); // YYYY-MM-DD
 
   // Clean up the meeting title
-  const cleanedTitle = cleanMeetingTitle(doc.title);
+  const cleanedTitle = cleanMeetingTitle(doc.title || 'Untitled');
 
   // Truncate long names
   const snakeName = toSnakeCase(cleanedTitle).slice(0, 50);
@@ -218,9 +218,10 @@ export async function granolaSyncCommand(options: GranolaSyncOptions): Promise<v
     let errors = 0;
 
     for (const [docId, doc] of docsToSync) {
-      const displayTitle = doc.title.length > 50
-        ? doc.title.slice(0, 47) + '...'
-        : doc.title;
+      const title = doc.title || 'Untitled';
+      const displayTitle = title.length > 50
+        ? title.slice(0, 47) + '...'
+        : title;
 
       process.stdout.write(`  ${style.dim(`[${synced + noTranscript + errors + 1}/${docsToSync.length}]`)} ${displayTitle}... `);
 
