@@ -88,6 +88,21 @@ export class XApiService {
   }
 
   /**
+   * Look up a user by username
+   */
+  async getUserByUsername(username: string): Promise<UserV2> {
+    try {
+      const { data } = await this.client.v2.userByUsername(username);
+      if (!data) {
+        throw new Error(`User @${username} not found`);
+      }
+      return data;
+    } catch (error) {
+      handleApiError(error as TwitterApiError, `Failed to look up @${username}`);
+    }
+  }
+
+  /**
    * Fetch user's tweets
    */
   async getUserTweets(userId: string, maxResults: number = 100): Promise<Tweet[]> {

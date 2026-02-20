@@ -71,9 +71,10 @@ program
 
 program
   .command('analyze-x')
-  .description('Generate style guide from your X (Twitter) posts')
-  .option('--count <n>', 'Number of tweets to fetch (max 100)', parseInt, 33)
-  .option('--overwrite', 'Overwrite existing style-from-analysis.md without prompting')
+  .description('Generate style guide from X (Twitter) posts')
+  .option('-u, --user <username>', 'Analyze another user\'s posts (default: your own)')
+  .option('-n, --count <n>', 'Number of tweets to fetch', parseInt, 33)
+  .option('--overwrite', 'Overwrite existing style guide without prompting')
   .option('--setup', 'Reconfigure X API credentials')
   .action(analyzeXCommand);
 
