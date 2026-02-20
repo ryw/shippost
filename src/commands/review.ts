@@ -189,12 +189,8 @@ export async function reviewCommand(options: ReviewOptions): Promise<void> {
         logger.error(`Rejected [${remaining - 1} remaining]`);
       }
 
-      // Save immediately (find post in allPosts and update)
-      const postIndex = allPosts.findIndex((p) => p.id === post.id);
-      if (postIndex !== -1) {
-        allPosts[postIndex] = post;
-        fs.writePosts(allPosts);
-      }
+      // Save atomically (re-reads file inside lock to avoid clobbering concurrent appends)
+      fs.updatePost(post.id, () => post);
 
       reviewed++;
     }

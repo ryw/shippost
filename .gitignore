@@ -28,6 +28,7 @@ Thumbs.db
 # State tracking (local)
 .t2p-state.json
 .granola-sync-state.json
+.posts.lock
 
 # Testing
 coverage/

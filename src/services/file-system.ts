@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, statSync } from 'fs';
+import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, rmdirSync, statSync } from 'fs';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
 import type { Post } from '../types/post.js';
@@ -8,6 +8,33 @@ import type { ContentStrategy } from '../types/strategy.js';
 import { DEFAULT_CONFIG } from '../types/config.js';
 import { FileSystemError, ConfigError, NotInitializedError } from '../utils/errors.js';
 import { validateConfig } from '../utils/validation.js';
+
+const LOCK_TIMEOUT_MS = 10_000;
+const LOCK_RETRY_MS = 50;
+
+function acquireLock(lockPath: string): void {
+  const deadline = Date.now() + LOCK_TIMEOUT_MS;
+  while (true) {
+    try {
+      mkdirSync(lockPath);
+      return;
+    } catch {
+      if (Date.now() >= deadline) {
+        // Stale lock — force remove and retry once
+        try { rmdirSync(lockPath); } catch {}
+        try { mkdirSync(lockPath); return; } catch {}
+        throw new FileSystemError('Failed to acquire posts lock — another process may be writing');
+      }
+      // Busy wait
+      const until = Date.now() + LOCK_RETRY_MS;
+      while (Date.now() < until) { /* spin */ }
+    }
+  }
+}
+
+function releaseLock(lockPath: string): void {
+  try { rmdirSync(lockPath); } catch {}
+}
 
 export class FileSystemService {
   private cwd: string;
@@ -98,24 +125,34 @@ export class FileSystemService {
     }
   }
 
+  private get postsLockPath(): string {
+    return join(this.cwd, '.posts.lock');
+  }
+
   appendPost(post: Post): void {
     const postsPath = join(this.cwd, 'posts.jsonl');
+    const lockPath = this.postsLockPath;
 
+    acquireLock(lockPath);
     try {
       const line = JSON.stringify(post) + '\n';
       appendFileSync(postsPath, line, 'utf-8');
     } catch (error) {
       throw new FileSystemError(`Failed to append post: ${(error as Error).message}`);
+    } finally {
+      releaseLock(lockPath);
     }
   }
 
   readPosts(): Post[] {
     const postsPath = join(this.cwd, 'posts.jsonl');
+    const lockPath = this.postsLockPath;
 
     if (!existsSync(postsPath)) {
       return [];
     }
 
+    acquireLock(lockPath);
     try {
       const content = readFileSync(postsPath, 'utf-8');
       const lines = content.trim().split('\n').filter((line) => line.length > 0);
@@ -123,17 +160,48 @@ export class FileSystemService {
       return lines.map((line) => JSON.parse(line) as Post);
     } catch (error) {
       throw new FileSystemError(`Failed to read posts: ${(error as Error).message}`);
+    } finally {
+      releaseLock(lockPath);
     }
   }
 
   writePosts(posts: Post[]): void {
     const postsPath = join(this.cwd, 'posts.jsonl');
+    const lockPath = this.postsLockPath;
 
+    acquireLock(lockPath);
     try {
       const content = posts.map((post) => JSON.stringify(post)).join('\n') + '\n';
       writeFileSync(postsPath, content, 'utf-8');
     } catch (error) {
       throw new FileSystemError(`Failed to write posts: ${(error as Error).message}`);
+    } finally {
+      releaseLock(lockPath);
+    }
+  }
+
+  /** Atomically update a single post by ID (re-reads file inside lock). */
+  updatePost(postId: string, updater: (post: Post) => Post): void {
+    const postsPath = join(this.cwd, 'posts.jsonl');
+    const lockPath = this.postsLockPath;
+
+    acquireLock(lockPath);
+    try {
+      const content = readFileSync(postsPath, 'utf-8');
+      const lines = content.trim().split('\n').filter((line) => line.length > 0);
+      const posts = lines.map((line) => JSON.parse(line) as Post);
+
+      const index = posts.findIndex((p) => p.id === postId);
+      if (index !== -1) {
+        posts[index] = updater(posts[index]);
+      }
+
+      const output = posts.map((post) => JSON.stringify(post)).join('\n') + '\n';
+      writeFileSync(postsPath, output, 'utf-8');
+    } catch (error) {
+      throw new FileSystemError(`Failed to update post: ${(error as Error).message}`);
+    } finally {
+      releaseLock(lockPath);
     }
   }
 
