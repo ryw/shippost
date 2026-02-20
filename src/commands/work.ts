@@ -527,16 +527,14 @@ export async function workCommand(options: WorkOptions): Promise<void> {
       totalProcessed++;
       totalGenerated += postsGenerated;
 
-      // Mark file as processed
+      // Mark file as processed and save immediately
       state = fs.markFileProcessed(filePath, postsGenerated, state);
+      fs.saveState(state);
     } catch (error) {
       logger.error(`  Failed: ${(error as Error).message}`);
       totalErrors++;
     }
   }
-
-  // Save state
-  fs.saveState(state);
 
   // Summary
   logger.blank();
