@@ -34,28 +34,26 @@ function displayPostForReview(post: Post, remaining: number): void {
   logger.info('  ' + '─'.repeat(70));
 }
 
-async function promptForDecision(): Promise<'stage' | 'keep' | 'reject' | 'quit'> {
+async function promptForDecision(): Promise<'stage' | 'reject' | 'quit'> {
   return new Promise((resolve) => {
     const rl = createInterface({
       input: process.stdin,
       output: process.stdout,
     });
 
-    rl.question('\ns=stage (Typefully) / Enter=keep / n=reject / q=quit: ', (answer) => {
+    rl.question('\n(s)tage  (r)eject  (q)uit: ', (answer) => {
       rl.close();
       const trimmed = answer.trim().toLowerCase();
 
       if (trimmed === 's') {
         resolve('stage');
-      } else if (trimmed === '' || trimmed === 'k' || trimmed === 'y') {
-        resolve('keep');
-      } else if (trimmed === 'n' || trimmed === 'r') {
+      } else if (trimmed === 'r') {
         resolve('reject');
       } else if (trimmed === 'q') {
         resolve('quit');
       } else {
-        // Default to keep for unrecognized input
-        resolve('keep');
+        // Re-prompt on unrecognized input
+        resolve(promptForDecision());
       }
     });
   });
@@ -122,12 +120,11 @@ export async function reviewCommand(options: ReviewOptions): Promise<void> {
     postsToReview = interleaved;
 
     if (postsToReview.length === 0) {
-      const kept = allPosts.filter((p) => p.status === 'keep').length;
       const staged = allPosts.filter((p) => p.status === 'staged').length;
       const rejected = allPosts.filter((p) => p.status === 'rejected').length;
 
       logger.success('No new posts to review!');
-      logger.info(`  Kept: ${kept} • Staged: ${staged} • Rejected: ${rejected}`);
+      logger.info(`  Staged: ${staged} • Rejected: ${rejected}`);
       return;
     }
 
@@ -141,7 +138,6 @@ export async function reviewCommand(options: ReviewOptions): Promise<void> {
 
     // Review loop
     let reviewed = 0;
-    let kept = 0;
     let staged = 0;
     let rejected = 0;
 
@@ -156,7 +152,7 @@ export async function reviewCommand(options: ReviewOptions): Promise<void> {
       if (decision === 'quit') {
         logger.blank();
         logger.info(`Session ended. Reviewed ${reviewed} posts`);
-        logger.info(`  Staged: ${staged} • Kept: ${kept} • Rejected: ${rejected}`);
+        logger.info(`  Staged: ${staged} • Rejected: ${rejected}`);
         logger.info(`${remaining} posts remaining to review`);
         return;
       }
@@ -164,8 +160,6 @@ export async function reviewCommand(options: ReviewOptions): Promise<void> {
       // Update post status
       if (decision === 'stage') {
         post.status = 'staged';
-      } else if (decision === 'keep') {
-        post.status = 'keep';
       } else {
         post.status = 'rejected';
       }
@@ -190,9 +184,6 @@ export async function reviewCommand(options: ReviewOptions): Promise<void> {
           post.status = 'new';
           continue;
         }
-      } else if (decision === 'keep') {
-        kept++;
-        logger.step(`Kept [${remaining - 1} remaining]`);
       } else {
         rejected++;
         logger.error(`Rejected [${remaining - 1} remaining]`);
@@ -211,7 +202,7 @@ export async function reviewCommand(options: ReviewOptions): Promise<void> {
     // Final summary
     logger.blank();
     logger.success('Review complete!');
-    logger.info(`  Staged: ${staged} • Kept: ${kept} • Rejected: ${rejected}`);
+    logger.info(`  Staged: ${staged} • Rejected: ${rejected}`);
   } catch (error) {
     logger.blank();
     logger.error((error as Error).message);

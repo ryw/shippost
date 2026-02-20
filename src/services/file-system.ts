@@ -199,20 +199,7 @@ export class FileSystemService {
   }
 
   isFileProcessed(filePath: string, state: T2pState): boolean {
-    const fileInfo = state.processedFiles[filePath];
-    if (!fileInfo) {
-      return false;
-    }
-
-    // Check if file has been modified since last processing
-    try {
-      const stats = statSync(filePath);
-      const currentModifiedAt = stats.mtime.toISOString();
-      return fileInfo.modifiedAt === currentModifiedAt;
-    } catch (error) {
-      // If we can't stat the file, consider it unprocessed
-      return false;
-    }
+    return !!state.processedFiles[filePath];
   }
 
   markFileProcessed(filePath: string, postsGenerated: number, state: T2pState): T2pState {

@@ -266,6 +266,21 @@ export async function workCommand(options: WorkOptions): Promise<void> {
     logger.info('Force mode: reprocessing all files');
   }
 
+  // Count unprocessed files upfront
+  const unprocessedFiles = options.force
+    ? inputFiles
+    : inputFiles.filter(f => !fs.isFileProcessed(f, state));
+  let remaining = unprocessedFiles.length;
+
+  if (remaining === 0) {
+    logger.blank();
+    logger.success('All transcripts already processed!');
+    logger.info(`${inputFiles.length} files total, 0 remaining`);
+    return;
+  }
+
+  logger.success(`${remaining} unprocessed transcript${remaining === 1 ? '' : 's'} to process`);
+
   // Step 3: Process files
   logger.section('[3/3] Processing files...');
 
@@ -526,10 +541,13 @@ export async function workCommand(options: WorkOptions): Promise<void> {
       logger.info(`  Generated ${postsGenerated} posts`);
       totalProcessed++;
       totalGenerated += postsGenerated;
+      remaining--;
 
       // Mark file as processed and save immediately
       state = fs.markFileProcessed(filePath, postsGenerated, state);
       fs.saveState(state);
+
+      logger.success(`  ✓ Done — ${remaining} transcript${remaining === 1 ? '' : 's'} remaining`);
     } catch (error) {
       logger.error(`  Failed: ${(error as Error).message}`);
       totalErrors++;
