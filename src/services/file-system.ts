@@ -12,6 +12,16 @@ import { validateConfig } from '../utils/validation.js';
 const LOCK_TIMEOUT_MS = 10_000;
 const LOCK_RETRY_MS = 50;
 
+/**
+ * Synchronous sleep that doesn't burn CPU cycles.
+ * Uses Atomics.wait() on a SharedArrayBuffer for efficient blocking.
+ */
+function sleepSync(ms: number): void {
+  const buffer = new SharedArrayBuffer(4);
+  const view = new Int32Array(buffer);
+  Atomics.wait(view, 0, 0, ms);
+}
+
 function acquireLock(lockPath: string): void {
   const deadline = Date.now() + LOCK_TIMEOUT_MS;
   while (true) {
@@ -25,9 +35,8 @@ function acquireLock(lockPath: string): void {
         try { mkdirSync(lockPath); return; } catch {}
         throw new FileSystemError('Failed to acquire posts lock — another process may be writing');
       }
-      // Busy wait
-      const until = Date.now() + LOCK_RETRY_MS;
-      while (Date.now() < until) { /* spin */ }
+      // Wait without spinning CPU
+      sleepSync(LOCK_RETRY_MS);
     }
   }
 }
