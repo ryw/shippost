@@ -8,6 +8,7 @@ import { logger } from '../utils/logger.js';
 import { isShippostProject } from '../utils/validation.js';
 import { NotInitializedError } from '../utils/errors.js';
 import { buildBangerEvalPrompt, parseBangerEval } from '../utils/banger-eval.js';
+import { getErrorMessage } from '../utils/error-utils.js';
 import type { PostGenerationResult } from '../types/post.js';
 import type { StrategyCategory } from '../types/strategy.js';
 
@@ -70,7 +71,7 @@ function parsePostsFromResponse(response: string): PostGenerationResult[] {
 
     return validPosts;
   } catch (error) {
-    logger.error(`Failed to parse LLM response: ${(error as Error).message}`);
+    logger.error(`Failed to parse LLM response: ${getErrorMessage(error)}`);
     logger.info('Raw response:');
     logger.info(response.substring(0, 500));
     return [];
@@ -94,7 +95,7 @@ function findInputFiles(inputDir: string): string[] {
     // Sort by filename descending (newest first, since files are named YYYY-MM-DD_...)
     return textFiles.sort((a, b) => b.localeCompare(a));
   } catch (error) {
-    logger.error(`Failed to read input directory: ${(error as Error).message}`);
+    logger.error(`Failed to read input directory: ${getErrorMessage(error)}`);
     return [];
   }
 }
@@ -449,7 +450,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
               logger.info(`  ${progress} ✗ No valid post generated`);
             }
           } catch (stratError) {
-            logger.info(`  ${progress} ✗ Failed: ${(stratError as Error).message}`);
+            logger.info(`  ${progress} ✗ Failed: ${getErrorMessage(stratError)}`);
             if (options.verbose) {
               logger.info(`    Strategy: ${strategy.id}`);
             }
@@ -549,7 +550,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
 
       logger.success(`  ✓ Done — ${remaining} transcript${remaining === 1 ? '' : 's'} remaining`);
     } catch (error) {
-      logger.error(`  Failed: ${(error as Error).message}`);
+      logger.error(`  Failed: ${getErrorMessage(error)}`);
       totalErrors++;
     }
   }
@@ -577,7 +578,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
   }
   } catch (error) {
     logger.blank();
-    logger.error((error as Error).message);
+    logger.error(getErrorMessage(error));
     process.exit(1);
   }
 }

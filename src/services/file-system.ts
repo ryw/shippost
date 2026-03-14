@@ -8,6 +8,7 @@ import type { ContentStrategy } from '../types/strategy.js';
 import { DEFAULT_CONFIG } from '../types/config.js';
 import { FileSystemError, ConfigError, NotInitializedError } from '../utils/errors.js';
 import { validateConfig } from '../utils/validation.js';
+import { getErrorMessage } from '../utils/error-utils.js';
 
 const LOCK_TIMEOUT_MS = 10_000;
 const LOCK_RETRY_MS = 50;
@@ -75,7 +76,7 @@ export class FileSystemService {
       if (error instanceof NotInitializedError || error instanceof ConfigError) {
         throw error;
       }
-      throw new FileSystemError(`Failed to load config: ${(error as Error).message}`);
+      throw new FileSystemError(`Failed to load config: ${getErrorMessage(error)}`);
     }
   }
 
@@ -85,7 +86,7 @@ export class FileSystemService {
     try {
       writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
     } catch (error) {
-      throw new FileSystemError(`Failed to save config: ${(error as Error).message}`);
+      throw new FileSystemError(`Failed to save config: ${getErrorMessage(error)}`);
     }
   }
 
@@ -99,7 +100,7 @@ export class FileSystemService {
     try {
       return readFileSync(promptPath, 'utf-8');
     } catch (error) {
-      throw new FileSystemError(`Failed to load prompt ${filename}: ${(error as Error).message}`);
+      throw new FileSystemError(`Failed to load prompt ${filename}: ${getErrorMessage(error)}`);
     }
   }
 
@@ -121,7 +122,7 @@ export class FileSystemService {
 
       return strategies;
     } catch (error) {
-      throw new FileSystemError(`Failed to load strategies: ${(error as Error).message}`);
+      throw new FileSystemError(`Failed to load strategies: ${getErrorMessage(error)}`);
     }
   }
 
@@ -138,7 +139,7 @@ export class FileSystemService {
       const line = JSON.stringify(post) + '\n';
       appendFileSync(postsPath, line, 'utf-8');
     } catch (error) {
-      throw new FileSystemError(`Failed to append post: ${(error as Error).message}`);
+      throw new FileSystemError(`Failed to append post: ${getErrorMessage(error)}`);
     } finally {
       releaseLock(lockPath);
     }
@@ -159,7 +160,7 @@ export class FileSystemService {
 
       return lines.map((line) => JSON.parse(line) as Post);
     } catch (error) {
-      throw new FileSystemError(`Failed to read posts: ${(error as Error).message}`);
+      throw new FileSystemError(`Failed to read posts: ${getErrorMessage(error)}`);
     } finally {
       releaseLock(lockPath);
     }
@@ -174,7 +175,7 @@ export class FileSystemService {
       const content = posts.map((post) => JSON.stringify(post)).join('\n') + '\n';
       writeFileSync(postsPath, content, 'utf-8');
     } catch (error) {
-      throw new FileSystemError(`Failed to write posts: ${(error as Error).message}`);
+      throw new FileSystemError(`Failed to write posts: ${getErrorMessage(error)}`);
     } finally {
       releaseLock(lockPath);
     }
@@ -199,7 +200,7 @@ export class FileSystemService {
       const output = posts.map((post) => JSON.stringify(post)).join('\n') + '\n';
       writeFileSync(postsPath, output, 'utf-8');
     } catch (error) {
-      throw new FileSystemError(`Failed to update post: ${(error as Error).message}`);
+      throw new FileSystemError(`Failed to update post: ${getErrorMessage(error)}`);
     } finally {
       releaseLock(lockPath);
     }
@@ -224,7 +225,7 @@ export class FileSystemService {
       try {
         mkdirSync(path, { recursive: true });
       } catch (error) {
-        throw new FileSystemError(`Failed to create directory ${path}: ${(error as Error).message}`);
+        throw new FileSystemError(`Failed to create directory ${path}: ${getErrorMessage(error)}`);
       }
     }
   }
@@ -233,7 +234,7 @@ export class FileSystemService {
     try {
       writeFileSync(path, content, 'utf-8');
     } catch (error) {
-      throw new FileSystemError(`Failed to write file ${path}: ${(error as Error).message}`);
+      throw new FileSystemError(`Failed to write file ${path}: ${getErrorMessage(error)}`);
     }
   }
 
@@ -252,7 +253,7 @@ export class FileSystemService {
       const content = readFileSync(statePath, 'utf-8');
       return JSON.parse(content) as T2pState;
     } catch (error) {
-      throw new FileSystemError(`Failed to load state: ${(error as Error).message}`);
+      throw new FileSystemError(`Failed to load state: ${getErrorMessage(error)}`);
     }
   }
 
@@ -262,7 +263,7 @@ export class FileSystemService {
     try {
       writeFileSync(statePath, JSON.stringify(state, null, 2), 'utf-8');
     } catch (error) {
-      throw new FileSystemError(`Failed to save state: ${(error as Error).message}`);
+      throw new FileSystemError(`Failed to save state: ${getErrorMessage(error)}`);
     }
   }
 
@@ -288,7 +289,7 @@ export class FileSystemService {
         },
       };
     } catch (error) {
-      throw new FileSystemError(`Failed to mark file as processed: ${(error as Error).message}`);
+      throw new FileSystemError(`Failed to mark file as processed: ${getErrorMessage(error)}`);
     }
   }
 }

@@ -4,6 +4,7 @@ import { homedir } from 'os';
 import { logger } from '../utils/logger.js';
 import { isShippostProject } from '../utils/validation.js';
 import { NotInitializedError } from '../utils/errors.js';
+import { getErrorMessage } from '../utils/error-utils.js';
 
 interface GranolaSyncOptions {
   count?: number;
@@ -253,7 +254,7 @@ export async function granolaSyncCommand(options: GranolaSyncOptions): Promise<v
           };
         }
       } catch (err) {
-        console.log(style.red(`error: ${(err as Error).message}`));
+        console.log(style.red(`error: ${getErrorMessage(err)}`));
         errors++;
       }
     }
@@ -272,7 +273,7 @@ export async function granolaSyncCommand(options: GranolaSyncOptions): Promise<v
 
   } catch (error) {
     logger.blank();
-    logger.error((error as Error).message);
+    logger.error(getErrorMessage(error));
     process.exit(1);
   }
 }

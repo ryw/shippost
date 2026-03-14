@@ -5,6 +5,7 @@ import { FileSystemService } from '../services/file-system.js';
 import { DEFAULT_CONFIG } from '../types/config.js';
 import { logger } from '../utils/logger.js';
 import { isShippostProject } from '../utils/validation.js';
+import { getErrorMessage } from '../utils/error-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -87,7 +88,7 @@ export async function initCommand(): Promise<void> {
     logger.info('6. Add transcript files to input/');
     logger.info('7. Run: ship work');
   } catch (error) {
-    logger.error(`Initialization failed: ${(error as Error).message}`);
+    logger.error(`Initialization failed: ${getErrorMessage(error)}`);
     process.exit(1);
   }
 }

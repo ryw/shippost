@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { T2pConfig } from '../types/config.js';
 import type { LLMService } from './llm-service.js';
+import { errorMessageIncludes } from '../utils/error-utils.js';
 
 export class AnthropicService implements LLMService {
   private client: Anthropic;
@@ -43,7 +44,7 @@ export class AnthropicService implements LLMService {
       return true;
     } catch (error) {
       // Store the error for better reporting
-      this.lastError = error as Error;
+      this.lastError = error instanceof Error ? error : new Error(String(error));
       return false;
     }
   }
@@ -98,7 +99,7 @@ export class AnthropicService implements LLMService {
 
       throw new Error('No text content in Anthropic response');
     } catch (error) {
-      if ((error as Error).message.includes('model')) {
+      if (errorMessageIncludes(error, 'model')) {
         throw new Error(`Anthropic model not found: ${this.getModelName()}`);
       }
       throw error;

@@ -8,6 +8,7 @@ import { createLLMService } from '../services/llm-factory.js';
 import { logger } from '../utils/logger.js';
 import { readlineSync } from '../utils/readline.js';
 import { formatCount, formatTimeAgo } from '../utils/format.js';
+import { getErrorMessage } from '../utils/error-utils.js';
 import { T2pConfig } from '../types/config.js';
 
 const STATE_FILE = '.ship-blog-state.json';
@@ -705,7 +706,7 @@ export async function blogCommand(options: BlogFromXOptions, command: Command): 
     }
   } catch (error) {
     logger.blank();
-    logger.error((error as Error).message);
+    logger.error(getErrorMessage(error));
     process.exit(1);
   }
 }

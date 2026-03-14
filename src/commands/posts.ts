@@ -5,6 +5,7 @@ import { NotInitializedError } from '../utils/errors.js';
 import { createLLMService } from '../services/llm-factory.js';
 import { buildBangerEvalPrompt, parseBangerEval } from '../utils/banger-eval.js';
 import { formatTimestamp } from '../utils/format.js';
+import { getErrorMessage } from '../utils/error-utils.js';
 import type { Post } from '../types/post.js';
 
 interface PostsOptions {
@@ -112,7 +113,7 @@ async function evaluateMissingScores(
       }
     } catch (error) {
       failed++;
-      logger.error(`${progress} Error: ${(error as Error).message}`);
+      logger.error(`${progress} Error: ${getErrorMessage(error)}`);
     }
   }
 
@@ -260,7 +261,7 @@ export async function postsCommand(options: PostsOptions): Promise<void> {
     logger.info('  -n <count>           Number of posts to show');
   } catch (error) {
     logger.blank();
-    logger.error((error as Error).message);
+    logger.error(getErrorMessage(error));
     process.exit(1);
   }
 }

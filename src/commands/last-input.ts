@@ -3,6 +3,7 @@ import { join } from 'path';
 import { logger } from '../utils/logger.js';
 import { isShippostProject } from '../utils/validation.js';
 import { NotInitializedError } from '../utils/errors.js';
+import { getErrorMessage } from '../utils/error-utils.js';
 
 export async function lastInputCommand(): Promise<void> {
   const cwd = process.cwd();
@@ -69,7 +70,7 @@ export async function lastInputCommand(): Promise<void> {
 
   } catch (error) {
     logger.blank();
-    logger.error((error as Error).message);
+    logger.error(getErrorMessage(error));
     process.exit(1);
   }
 }

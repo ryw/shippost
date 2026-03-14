@@ -12,6 +12,7 @@ import { NotInitializedError } from '../utils/errors.js';
 import { readlineSync } from '../utils/readline.js';
 import { formatCount, formatFollowerCount, formatTimeAgo } from '../utils/format.js';
 import { openInEditor, getEditorDisplayName } from '../utils/editor.js';
+import { getErrorMessage } from '../utils/error-utils.js';
 
 const SKIP_CACHE_FILE = '.shippost-skipped-tweets.json';
 const SKIP_CACHE_MAX_AGE = 24 * 60 * 60 * 1000; // 24 hours
@@ -188,7 +189,7 @@ function editReply(currentReply: string): string {
 
     return content;
   } catch (error) {
-    logger.error(`Failed to open editor: ${(error as Error).message}`);
+    logger.error(`Failed to open editor: ${getErrorMessage(error)}`);
     return currentReply;
   } finally {
     // Clean up temp file
@@ -250,7 +251,7 @@ function parseReplyOpportunities(
         reasoning: item.reasoning || '',
       }));
   } catch (error) {
-    logger.error(`Failed to parse LLM response: ${(error as Error).message}`);
+    logger.error(`Failed to parse LLM response: ${getErrorMessage(error)}`);
     return [];
   }
 }
@@ -486,10 +487,10 @@ export async function replyCommand(options: ReplyOptions): Promise<void> {
           await apiService.likeTweet(opportunity.tweet.id);
           logger.info(`${logger.style.red('♥')} Liked`);
         } catch (likeError) {
-          logger.warn(`Could not like tweet: ${(likeError as Error).message}`);
+          logger.warn(`Could not like tweet: ${getErrorMessage(likeError)}`);
         }
       } catch (error) {
-        logger.error(`Failed to post: ${(error as Error).message}`);
+        logger.error(`Failed to post: ${getErrorMessage(error)}`);
       }
     }
 
@@ -499,7 +500,7 @@ export async function replyCommand(options: ReplyOptions): Promise<void> {
     logger.info(`  Posted: ${posted} • Skipped: ${skipped}`);
   } catch (error) {
     logger.blank();
-    logger.error((error as Error).message);
+    logger.error(getErrorMessage(error));
     process.exit(1);
   }
 }

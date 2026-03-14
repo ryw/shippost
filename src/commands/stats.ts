@@ -6,6 +6,7 @@ import { XApiService } from '../services/x-api.js';
 import { logger } from '../utils/logger.js';
 import { isShippostProject } from '../utils/validation.js';
 import { NotInitializedError } from '../utils/errors.js';
+import { getErrorMessage } from '../utils/error-utils.js';
 import type { UserV2WithMetrics, TweetV2WithMetrics } from '../types/x-api-responses.js';
 
 const STATS_CACHE_FILE = '.shippost-stats-cache.json';
@@ -296,7 +297,7 @@ export async function statsCommand(): Promise<void> {
 
   } catch (error) {
     logger.blank();
-    logger.error((error as Error).message);
+    logger.error(getErrorMessage(error));
     process.exit(1);
   }
 }

@@ -8,6 +8,7 @@ import { logger } from '../utils/logger.js';
 import { isShippostProject } from '../utils/validation.js';
 import { NotInitializedError } from '../utils/errors.js';
 import { buildStyleAnalysisPrompt, parseStyleGuide } from '../utils/style-analysis.js';
+import { getErrorMessage } from '../utils/error-utils.js';
 
 interface AnalyzeXOptions {
   count?: number;
@@ -158,7 +159,7 @@ export async function analyzeXCommand(options: AnalyzeXOptions): Promise<void> {
     logger.info('- Run: ship work');
   } catch (error) {
     logger.blank();
-    logger.error((error as Error).message);
+    logger.error(getErrorMessage(error));
     process.exit(1);
   }
 }

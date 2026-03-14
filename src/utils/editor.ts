@@ -141,7 +141,7 @@ export function openInEditor(filePath: string): { status: number | null; error?:
 
     return { status: result.status };
   } catch (error) {
-    return { status: null, error: error as Error };
+    return { status: null, error: error instanceof Error ? error : new Error(String(error)) };
   }
 }
 

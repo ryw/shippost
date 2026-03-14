@@ -4,6 +4,7 @@ import { TypefullyService } from '../services/typefully.js';
 import { logger } from '../utils/logger.js';
 import { isShippostProject } from '../utils/validation.js';
 import { NotInitializedError } from '../utils/errors.js';
+import { getErrorMessage } from '../utils/error-utils.js';
 import type { Post } from '../types/post.js';
 
 interface ReviewOptions {
@@ -179,7 +180,7 @@ export async function reviewCommand(options: ReviewOptions): Promise<void> {
             logger.info(`  ${draft.share_url}`);
           }
         } catch (error) {
-          logger.error(`Failed to stage: ${(error as Error).message}`);
+          logger.error(`Failed to stage: ${getErrorMessage(error)}`);
           // Revert status on failure
           post.status = 'new';
           continue;
@@ -201,7 +202,7 @@ export async function reviewCommand(options: ReviewOptions): Promise<void> {
     logger.info(`  Staged: ${staged} • Rejected: ${rejected}`);
   } catch (error) {
     logger.blank();
-    logger.error((error as Error).message);
+    logger.error(getErrorMessage(error));
     process.exit(1);
   }
 }

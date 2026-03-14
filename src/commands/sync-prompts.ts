@@ -5,6 +5,7 @@ import { createInterface } from 'readline';
 import { logger } from '../utils/logger.js';
 import { isShippostProject } from '../utils/validation.js';
 import { NotInitializedError } from '../utils/errors.js';
+import { getErrorMessage } from '../utils/error-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -190,7 +191,7 @@ export async function syncPromptsCommand(options: SyncPromptsOptions): Promise<v
 
   } catch (error) {
     logger.blank();
-    logger.error((error as Error).message);
+    logger.error(getErrorMessage(error));
     process.exit(1);
   }
 }

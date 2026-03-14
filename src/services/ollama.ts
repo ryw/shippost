@@ -2,6 +2,7 @@ import { Ollama } from 'ollama';
 import type { T2pConfig } from '../types/config.js';
 import type { LLMService } from './llm-service.js';
 import { OllamaNotAvailableError, ModelNotFoundError } from '../utils/errors.js';
+import { errorMessageIncludes } from '../utils/error-utils.js';
 
 export class OllamaService implements LLMService {
   private client: Ollama;
@@ -61,7 +62,7 @@ export class OllamaService implements LLMService {
 
       return response.response;
     } catch (error) {
-      if ((error as Error).message.includes('model')) {
+      if (errorMessageIncludes(error, 'model')) {
         throw new ModelNotFoundError(this.config.ollama!.model);
       }
       throw error;

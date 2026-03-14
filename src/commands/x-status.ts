@@ -4,6 +4,7 @@ import { XApiService } from '../services/x-api.js';
 import { logger } from '../utils/logger.js';
 import { isShippostProject } from '../utils/validation.js';
 import { NotInitializedError } from '../utils/errors.js';
+import { getErrorMessage } from '../utils/error-utils.js';
 
 function formatTimeUntil(date: Date): string {
   const now = new Date();
@@ -117,7 +118,7 @@ export async function xStatusCommand(): Promise<void> {
 
   } catch (error) {
     logger.blank();
-    logger.error((error as Error).message);
+    logger.error(getErrorMessage(error));
     process.exit(1);
   }
 }
