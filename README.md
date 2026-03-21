@@ -235,13 +235,13 @@ ship analyze-x --setup          # Reconfigure X API credentials
 
 **Requirements:**
 - Free X Developer account ([sign up](https://developer.x.com/))
-- OAuth 2.0 app with redirect URI: `http://127.0.0.1:3000/callback`
+- OAuth 2.0 app with redirect URI: `http://127.0.0.1:9876/callback`
 - Scopes: `tweet.read`, `users.read`, `offline.access`
 
 **First-time setup:**
 1. Create app at [X Developer Portal](https://developer.x.com/en/portal/dashboard)
 2. Enable OAuth 2.0
-3. Set redirect URI to `http://127.0.0.1:3000/callback`
+3. Set redirect URI to `http://127.0.0.1:9876/callback`
 4. Run `ship analyze-x` and enter your Client ID
 
 > **Rate limits:** Free tier allows 100 reads/month. Upgrade to Basic ($200/month) for 10,000 reads.
@@ -478,7 +478,7 @@ Press `s` during review to stage a post. The draft URL is displayed for quick ac
 
 1. Create app at [X Developer Portal](https://developer.x.com/en/portal/dashboard)
 2. Enable OAuth 2.0
-3. Set redirect URI: `http://127.0.0.1:3000/callback`
+3. Set redirect URI: `http://127.0.0.1:9876/callback`
 4. For `ship reply`: Enable "Read and Write" permissions
 
 ### API Tiers
