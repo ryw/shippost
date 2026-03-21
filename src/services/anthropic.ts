@@ -106,7 +106,7 @@ export class AnthropicService implements LLMService {
   }
 
   getModelName(): string {
-    return this.config.anthropic?.model || 'claude-3-5-sonnet-20241022';
+    return this.config.anthropic?.model || 'claude-sonnet-4-5-20250514';
   }
 
   getTemperature(): number {
