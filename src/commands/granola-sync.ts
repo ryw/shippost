@@ -223,7 +223,7 @@ export async function granolaSyncCommand(options: GranolaSyncOptions): Promise<v
         ? title.slice(0, 47) + '...'
         : title;
 
-      process.stdout.write(`  ${style.dim(`[${synced + noTranscript + errors + 1}/${docsToSync.length}]`)} ${displayTitle}... `);
+      logger.write(`  ${style.dim(`[${synced + noTranscript + errors + 1}/${docsToSync.length}]`)} ${displayTitle}... `);
 
       try {
         const transcript = await fetchTranscript(accessToken, docId);
@@ -240,10 +240,10 @@ export async function granolaSyncCommand(options: GranolaSyncOptions): Promise<v
             filename,
           };
 
-          console.log(style.green('✓ saved'));
+          logger.writeln(style.green('✓ saved'));
           synced++;
         } else {
-          console.log(style.dim('no transcript'));
+          logger.writeln(style.dim('no transcript'));
           noTranscript++;
 
           // Still mark as synced to avoid retrying
@@ -253,7 +253,7 @@ export async function granolaSyncCommand(options: GranolaSyncOptions): Promise<v
           };
         }
       } catch (err) {
-        console.log(style.red(`error: ${(err as Error).message}`));
+        logger.writeln(style.red(`error: ${(err as Error).message}`));
         errors++;
       }
     }
