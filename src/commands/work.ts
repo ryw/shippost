@@ -144,6 +144,12 @@ Generate a SINGLE post following the strategy above.`;
 
 interface BlogGenerationResult {
   title: string;
+  slug: string;
+  description: string;
+  tags: string[];
+  takeaways: string[];
+  faq: Array<{ question: string; answer: string }>;
+  sources: Array<{ id: string; title: string; url: string }>;
   body: string;
 }
 
@@ -163,30 +169,73 @@ Generate a blog post draft exploring the key themes from this transcript.
 
 Target audience: executive leadership at startups and knowledge-work organizations
 Topics: AI agents as software, enterprise AI operationalization, agent mesh/fabric
-Format: start with \`# Title\` on the first line, then markdown body
 Length: 800-1500 words
 Voice: business visionary, grounded in building experience
 
-TRANSCRIPT TO PROCESS:
-${transcript}
+Output ONLY valid JSON (no markdown fences, no commentary) with this exact structure:
+{
+  "title": "Post Title Here",
+  "slug": "short-slug-here",
+  "description": "One-sentence summary for SEO/social cards (under 160 chars)",
+  "tags": ["ai", "software-engineering"],
+  "takeaways": ["Key insight 1", "Key insight 2", "Key insight 3"],
+  "faq": [
+    {"question": "...", "answer": "..."},
+    {"question": "...", "answer": "..."}
+  ],
+  "sources": [
+    {"id": "short-kebab-id", "title": "Source Title", "url": "https://..."},
+    {"id": "short-kebab-id", "title": "Source Title", "url": "https://..."}
+  ],
+  "body": "Full markdown body here (use \\n for newlines)"
+}
 
-Generate a long-form blog draft based on the transcript above.`;
+Rules for the slug: 2-5 words, lowercase, hyphenated (e.g. "agents-are-software", "demo-vs-deployment").
+Rules for tags: pick 2-4 from [ai, software-engineering, tembo, startups, agents, enterprise].
+Rules for takeaways: exactly 3, one sentence each.
+Rules for faq: exactly 2 entries, question and answer.
+Rules for sources: 2-4 real, verifiable external sources (articles, papers, blog posts) relevant to the post's themes. Use actual URLs that exist. Each id is a short kebab-case identifier.
+
+TRANSCRIPT TO PROCESS:
+${transcript}`;
 
   const response = await llm.generate(prompt);
 
-  // Parse the response to extract title and body
-  const lines = response.trim().split('\n');
-  let title = 'Untitled Blog Draft';
-  let bodyStartIndex = 0;
+  // Parse JSON response
+  try {
+    // Strip markdown fences if present
+    const cleaned = response.replace(/^```json?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+    const parsed = JSON.parse(cleaned);
 
-  if (lines[0].startsWith('# ')) {
-    title = lines[0].substring(2).trim();
-    bodyStartIndex = 1;
+    return {
+      title: parsed.title || 'Untitled Blog Draft',
+      slug: parsed.slug || createSlug(parsed.title || 'untitled'),
+      description: parsed.description || '',
+      tags: Array.isArray(parsed.tags) ? parsed.tags : ['ai'],
+      takeaways: Array.isArray(parsed.takeaways) ? parsed.takeaways : [],
+      faq: Array.isArray(parsed.faq) ? parsed.faq : [],
+      sources: Array.isArray(parsed.sources) ? parsed.sources : [],
+      body: (parsed.body || '').replace(/\\n/g, '\n'),
+    };
+  } catch {
+    // Fallback: try to extract title and body from markdown response
+    const lines = response.trim().split('\n');
+    const titleIndex = lines.findIndex((l: string) => l.startsWith('# '));
+    const title = titleIndex >= 0 ? lines[titleIndex].substring(2).trim() : 'Untitled Blog Draft';
+    const bodyStart = titleIndex >= 0 ? titleIndex + 1 : 0;
+    const body = lines.slice(bodyStart).join('\n').trim();
+
+    return {
+      title,
+      slug: createSlug(title),
+      description: '',
+      tags: ['ai'],
+      takeaways: [],
+      faq: [],
+      sources: [],
+      body,
+    };
   }
-
-  const body = lines.slice(bodyStartIndex).join('\n').trim();
-
-  return { title, body };
 }
 
 function createSlug(title: string): string {
@@ -200,8 +249,7 @@ function createSlug(title: string): string {
 
 function saveBlogDraft(
   outputDir: string,
-  title: string,
-  body: string,
+  result: BlogGenerationResult,
   sourceFile: string
 ): string {
   // Ensure output directory exists
@@ -209,86 +257,106 @@ function saveBlogDraft(
     mkdirSync(outputDir, { recursive: true });
   }
 
-  // Create filename with current date and slugified title
   const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-  const slug = createSlug(title);
-  const filename = `${today}_${slug}.md`;
+  const slug = result.slug || createSlug(result.title);
+  const filename = `${slug}.mdx`;
   const filePath = join(outputDir, filename);
 
-  // Create frontmatter
+  // Build frontmatter matching published post format
+  const tagsYaml = result.tags.map((t: string) => `  - ${t}`).join('\n');
+  const takeawaysYaml = result.takeaways.map((t: string) => `  - ${t}`).join('\n');
+
+  let faqYaml = '';
+  if (result.faq.length > 0) {
+    faqYaml = 'faq:\n' + result.faq.map((f: { question: string; answer: string }) =>
+      `  - question: "${f.question}"\n    answer: >-\n      ${f.answer}`
+    ).join('\n');
+  }
+
+  let sourcesYaml = '';
+  if (result.sources.length > 0) {
+    sourcesYaml = 'sources:\n' + result.sources.map((s: { id: string; title: string; url: string }) =>
+      `  - id: ${s.id}\n    title: "${s.title}"\n    url: ${s.url}`
+    ).join('\n');
+  }
+
   const frontmatter = `---
-title: "${title}"
-draft: true
-date: ${today}
+title: "${result.title}"
+date: '${today}'
+description: >-
+  ${result.description}
+tags:
+${tagsYaml}
 source: ${sourceFile}
+draft: true
+takeaways:
+${takeawaysYaml}
+${faqYaml}
+${sourcesYaml}
 ---
 
-${body}`;
+${result.body}`;
 
   writeFileSync(filePath, frontmatter, 'utf-8');
   return filePath;
 }
 
-async function updateRelatedBlogDrafts(
-  llm: any,
-  transcript: string,
-  outputDir: string
-): Promise<Array<{ path: string; updated: boolean }>> {
-  if (!existsSync(outputDir)) {
-    return [];
+function findBlogPosts(dirs: string[]): Array<{ name: string; path: string; mtime: Date }> {
+  const files: Array<{ name: string; path: string; mtime: Date }> = [];
+
+  for (const dir of dirs) {
+    if (!existsSync(dir)) continue;
+    try {
+      for (const file of readdirSync(dir)) {
+        if (!file.endsWith('.md') && !file.endsWith('.mdx')) continue;
+        const filePath = join(dir, file);
+        files.push({ name: file, path: filePath, mtime: statSync(filePath).mtime });
+      }
+    } catch {
+      // skip unreadable dirs
+    }
   }
 
+  return files
+    .sort((a, b) => b.mtime.getTime() - a.mtime.getTime())
+    .slice(0, 5);
+}
+
+async function updateRelatedBlogPosts(
+  llm: any,
+  transcript: string,
+  contentDirs: string[]
+): Promise<Array<{ path: string; updated: boolean }>> {
+  const files = findBlogPosts(contentDirs);
   const results: Array<{ path: string; updated: boolean }> = [];
 
-  try {
-    const files = readdirSync(outputDir)
-      .filter(file => file.endsWith('.md'))
-      .map(file => ({
-        name: file,
-        path: join(outputDir, file),
-        mtime: statSync(join(outputDir, file)).mtime
-      }))
-      .sort((a, b) => b.mtime.getTime() - a.mtime.getTime()) // Most recent first
-      .slice(0, 5); // Limit to 5 most recent drafts
+  for (const file of files) {
+    try {
+      const content = readFileSync(file.path, 'utf-8');
 
-    for (const file of files) {
-      try {
-        const content = readFileSync(file.path, 'utf-8');
-
-        // Check if this is a draft (has draft: true in frontmatter)
-        if (!content.includes('draft: true')) {
-          continue;
-        }
-
-        const prompt = `Given this new transcript content:
+      const prompt = `Given this new transcript content:
 
 ${transcript}
 
-And this existing blog draft:
+And this existing blog post:
 
 ${content}
 
-Does this draft need updating based on the new transcript content? If yes, provide the updated content (full markdown with frontmatter). If no, respond with exactly "SKIP".
+Does this post need updating based on the new transcript content? If yes, provide the updated content (full markdown/mdx with frontmatter preserved exactly). If no, respond with exactly "SKIP".
 
-Only update if the transcript content is genuinely related and would improve the draft.`;
+Only update if the transcript content is genuinely related and would improve the post. Preserve all existing frontmatter fields and formatting.`;
 
-        const response = await llm.generate(prompt);
+      const response = await llm.generate(prompt);
 
-        if (response.trim() === 'SKIP') {
-          results.push({ path: file.path, updated: false });
-        } else {
-          // Update the file with the new content
-          writeFileSync(file.path, response.trim(), 'utf-8');
-          results.push({ path: file.path, updated: true });
-        }
-      } catch (error) {
-        // If individual file update fails, continue with others
+      if (response.trim() === 'SKIP') {
         results.push({ path: file.path, updated: false });
+      } else {
+        writeFileSync(file.path, response.trim(), 'utf-8');
+        results.push({ path: file.path, updated: true });
       }
+    } catch {
+      results.push({ path: file.path, updated: false });
     }
-  } catch (error) {
-    // If reading directory fails, return empty results
-    return [];
   }
 
   return results;
@@ -415,7 +483,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
 
   // Determine strategy configuration
   const strategiesEnabled =
-    !options.noStrategies && (config.generation.strategies?.enabled !== false);
+    !options.noStrategies && (config.generation.strategies?.enabled === true);
   const postCount = options.count || config.generation.postsPerTranscript || 8;
 
   if (strategiesEnabled && options.verbose) {
@@ -481,6 +549,8 @@ export async function workCommand(options: WorkOptions): Promise<void> {
       }
       if (choice !== 'y' && choice !== 'yes') {
         logger.info('  Skipped');
+        state = fs.markFileProcessed(filePath, 0, state);
+        fs.saveState(state);
         totalSkipped++;
         remaining--;
         continue;
@@ -655,8 +725,8 @@ export async function workCommand(options: WorkOptions): Promise<void> {
           }
         }
       } else {
-        // Legacy generation (no strategies)
-        logger.info(`  Generating posts (legacy mode)...`);
+        // Direct generation using work.md instructions
+        logger.info(`  Generating posts...`);
 
         const prompt = buildPrompt(systemPrompt, styleGuide, workInstructions, transcript);
 
@@ -752,15 +822,17 @@ export async function workCommand(options: WorkOptions): Promise<void> {
       // Generate blog draft
       logger.info('  Generating blog draft...');
       const blogResult = await generateBlogDraft(llm, transcript, systemPrompt, styleGuide);
-      const blogPath = saveBlogDraft(config.blog?.outputDir || 'src/content/drafts', blogResult.title, blogResult.body, relativePath);
+      const blogPath = saveBlogDraft(config.blog?.outputDir || 'src/content/drafts', blogResult, relativePath);
       logger.success(`  Blog draft: ${relative(cwd, blogPath)}`);
 
-      // Update related existing drafts
-      logger.info('  Checking existing blog drafts...');
-      const updates = await updateRelatedBlogDrafts(llm, transcript, config.blog?.outputDir || 'src/content/drafts');
+      // Update related existing blog posts (drafts + published)
+      logger.info('  Checking existing blog posts...');
+      const draftsDir = config.blog?.outputDir || 'src/content/drafts';
+      const postsDir = join(draftsDir, '..', 'posts');
+      const updates = await updateRelatedBlogPosts(llm, transcript, [draftsDir, postsDir]);
       const updatedCount = updates.filter(u => u.updated).length;
       if (updatedCount > 0) {
-        logger.success(`  Updated ${updatedCount} related blog draft${updatedCount === 1 ? '' : 's'}`);
+        logger.success(`  Updated ${updatedCount} related blog post${updatedCount === 1 ? '' : 's'}`);
       }
 
       // Processing summary
@@ -768,7 +840,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
       if (xPostsGenerated > 0) summaryParts.push(`${xPostsGenerated} X post${xPostsGenerated === 1 ? '' : 's'}`);
       if (linkedinPostsGenerated > 0) summaryParts.push(`${linkedinPostsGenerated} LinkedIn post${linkedinPostsGenerated === 1 ? '' : 's'}`);
       summaryParts.push('1 new blog draft');
-      if (updatedCount > 0) summaryParts.push(`${updatedCount} existing draft${updatedCount === 1 ? '' : 's'} updated`);
+      if (updatedCount > 0) summaryParts.push(`${updatedCount} existing post${updatedCount === 1 ? '' : 's'} updated`);
 
       logger.info(`  Summary: ${summaryParts.join(', ')}`);
       totalProcessed++;
