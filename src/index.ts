@@ -51,6 +51,7 @@ program
   .option('--list-strategies', 'List all available strategies')
   .option('--category <category>', 'Filter strategies by category (with --list-strategies)')
   .option('--no-strategies', 'Disable strategy-based generation (use legacy mode)')
+  .option('-a, --all', 'Process all transcripts without prompting')
   .action(workCommand);
 
 program

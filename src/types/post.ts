@@ -18,6 +18,7 @@ export interface Post {
   id: string;
   sourceFile: string;
   content: string;
+  platform?: 'x' | 'linkedin';
   metadata: {
     model: string;
     temperature: number;
@@ -37,4 +38,5 @@ export interface Post {
 
 export interface PostGenerationResult {
   content: string;
+  platform?: 'x' | 'linkedin';
 }

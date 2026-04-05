@@ -1,10 +1,11 @@
-import { readdirSync, readFileSync, statSync } from 'fs';
+import { readdirSync, readFileSync, statSync, existsSync, mkdirSync, writeFileSync } from 'fs';
 import { join, relative } from 'path';
 import { FileSystemService } from '../services/file-system.js';
 import { createLLMService } from '../services/llm-factory.js';
 import { ContentAnalyzer } from '../services/content-analyzer.js';
 import { StrategySelector } from '../services/strategy-selector.js';
 import { logger } from '../utils/logger.js';
+import { readlineSync } from '../utils/readline.js';
 import { isShippostProject } from '../utils/validation.js';
 import { NotInitializedError } from '../utils/errors.js';
 import { buildBangerEvalPrompt, parseBangerEval } from '../utils/banger-eval.js';
@@ -21,6 +22,7 @@ interface WorkOptions {
   listStrategies?: boolean;
   category?: string;
   noStrategies?: boolean;
+  all?: boolean;
 }
 
 function buildPrompt(systemPrompt: string, styleGuide: string, workInstructions: string, transcript: string): string {
@@ -50,7 +52,24 @@ function parsePostsFromResponse(response: string): PostGenerationResult[] {
 
     // Convert to PostGenerationResult format and filter placeholders
     const validPosts = posts
-      .map(content => ({ content }))
+      .map(postText => {
+        // Check for platform tag at start
+        const platformMatch = postText.match(/^\[PLATFORM:\s*(x|linkedin)\]/i);
+
+        let content: string;
+        let platform: 'x' | 'linkedin' | undefined;
+
+        if (platformMatch) {
+          platform = platformMatch[1].toLowerCase() as 'x' | 'linkedin';
+          // Strip the platform tag from the content
+          content = postText.replace(/^\[PLATFORM:\s*(x|linkedin)\]\s*/i, '').trim();
+        } else {
+          content = postText;
+          platform = undefined;
+        }
+
+        return { content, platform };
+      })
       .filter((item) => {
         const content = item.content;
 
@@ -121,6 +140,158 @@ TRANSCRIPT TO PROCESS:
 ${transcript}
 
 Generate a SINGLE post following the strategy above.`;
+}
+
+interface BlogGenerationResult {
+  title: string;
+  body: string;
+}
+
+async function generateBlogDraft(
+  llm: any,
+  transcript: string,
+  systemPrompt: string,
+  styleGuide: string
+): Promise<BlogGenerationResult> {
+  const prompt = `${systemPrompt}
+
+STYLE GUIDE:
+${styleGuide}
+
+INSTRUCTIONS:
+Generate a blog post draft exploring the key themes from this transcript.
+
+Target audience: executive leadership at startups and knowledge-work organizations
+Topics: AI agents as software, enterprise AI operationalization, agent mesh/fabric
+Format: start with \`# Title\` on the first line, then markdown body
+Length: 800-1500 words
+Voice: business visionary, grounded in building experience
+
+TRANSCRIPT TO PROCESS:
+${transcript}
+
+Generate a long-form blog draft based on the transcript above.`;
+
+  const response = await llm.generate(prompt);
+
+  // Parse the response to extract title and body
+  const lines = response.trim().split('\n');
+  let title = 'Untitled Blog Draft';
+  let bodyStartIndex = 0;
+
+  if (lines[0].startsWith('# ')) {
+    title = lines[0].substring(2).trim();
+    bodyStartIndex = 1;
+  }
+
+  const body = lines.slice(bodyStartIndex).join('\n').trim();
+
+  return { title, body };
+}
+
+function createSlug(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '') // Remove special chars
+    .replace(/\s+/g, '-') // Replace spaces with hyphens
+    .replace(/-+/g, '-') // Collapse multiple hyphens
+    .replace(/^-|-$/g, ''); // Trim hyphens from start/end
+}
+
+function saveBlogDraft(
+  outputDir: string,
+  title: string,
+  body: string,
+  sourceFile: string
+): string {
+  // Ensure output directory exists
+  if (!existsSync(outputDir)) {
+    mkdirSync(outputDir, { recursive: true });
+  }
+
+  // Create filename with current date and slugified title
+  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+  const slug = createSlug(title);
+  const filename = `${today}_${slug}.md`;
+  const filePath = join(outputDir, filename);
+
+  // Create frontmatter
+  const frontmatter = `---
+title: "${title}"
+draft: true
+date: ${today}
+source: ${sourceFile}
+---
+
+${body}`;
+
+  writeFileSync(filePath, frontmatter, 'utf-8');
+  return filePath;
+}
+
+async function updateRelatedBlogDrafts(
+  llm: any,
+  transcript: string,
+  outputDir: string
+): Promise<Array<{ path: string; updated: boolean }>> {
+  if (!existsSync(outputDir)) {
+    return [];
+  }
+
+  const results: Array<{ path: string; updated: boolean }> = [];
+
+  try {
+    const files = readdirSync(outputDir)
+      .filter(file => file.endsWith('.md'))
+      .map(file => ({
+        name: file,
+        path: join(outputDir, file),
+        mtime: statSync(join(outputDir, file)).mtime
+      }))
+      .sort((a, b) => b.mtime.getTime() - a.mtime.getTime()) // Most recent first
+      .slice(0, 5); // Limit to 5 most recent drafts
+
+    for (const file of files) {
+      try {
+        const content = readFileSync(file.path, 'utf-8');
+
+        // Check if this is a draft (has draft: true in frontmatter)
+        if (!content.includes('draft: true')) {
+          continue;
+        }
+
+        const prompt = `Given this new transcript content:
+
+${transcript}
+
+And this existing blog draft:
+
+${content}
+
+Does this draft need updating based on the new transcript content? If yes, provide the updated content (full markdown with frontmatter). If no, respond with exactly "SKIP".
+
+Only update if the transcript content is genuinely related and would improve the draft.`;
+
+        const response = await llm.generate(prompt);
+
+        if (response.trim() === 'SKIP') {
+          results.push({ path: file.path, updated: false });
+        } else {
+          // Update the file with the new content
+          writeFileSync(file.path, response.trim(), 'utf-8');
+          results.push({ path: file.path, updated: true });
+        }
+      } catch (error) {
+        // If individual file update fails, continue with others
+        results.push({ path: file.path, updated: false });
+      }
+    }
+  } catch (error) {
+    // If reading directory fails, return empty results
+    return [];
+  }
+
+  return results;
 }
 
 function listStrategiesCommand(fs: FileSystemService, options: WorkOptions): void {
@@ -300,6 +471,22 @@ export async function workCommand(options: WorkOptions): Promise<void> {
       continue;
     }
 
+    // Interactive per-transcript prompt
+    if (!options.all) {
+      const answer = await readlineSync(`  Process this transcript? (y/n/q) `);
+      const choice = answer.trim().toLowerCase();
+      if (choice === 'q') {
+        logger.info('  Stopping.');
+        break;
+      }
+      if (choice !== 'y' && choice !== 'yes') {
+        logger.info('  Skipped');
+        totalSkipped++;
+        remaining--;
+        continue;
+      }
+    }
+
     try {
       // Read transcript
       const transcript = readFileSync(filePath, 'utf-8');
@@ -310,6 +497,8 @@ export async function workCommand(options: WorkOptions): Promise<void> {
       }
 
       let postsGenerated = 0;
+      let xPostsGenerated = 0;
+      let linkedinPostsGenerated = 0;
 
       // Strategy-based generation
       if (strategiesEnabled) {
@@ -395,6 +584,9 @@ export async function workCommand(options: WorkOptions): Promise<void> {
                 llm.getTemperature()
               );
 
+              // Set platform
+              post.platform = postData.platform || 'x';
+
               // Add strategy metadata
               post.metadata.strategy = {
                 id: strategy.id,
@@ -425,6 +617,13 @@ export async function workCommand(options: WorkOptions): Promise<void> {
 
               fs.appendPost(post);
               postsGenerated++;
+
+              // Count by platform
+              if (post.platform === 'linkedin') {
+                linkedinPostsGenerated++;
+              } else {
+                xPostsGenerated++;
+              }
 
               // Show completion with post content
               if (!options.verbose) {
@@ -496,6 +695,9 @@ export async function workCommand(options: WorkOptions): Promise<void> {
             llm.getTemperature()
           );
 
+          // Set platform
+          post.platform = postData.platform || 'x';
+
           // Evaluate banger potential
           try {
             const evalPrompt = buildBangerEvalPrompt(bangerEvalTemplate, postData.content);
@@ -519,6 +721,13 @@ export async function workCommand(options: WorkOptions): Promise<void> {
           fs.appendPost(post);
           postsGenerated++;
 
+          // Count by platform
+          if (post.platform === 'linkedin') {
+            linkedinPostsGenerated++;
+          } else {
+            xPostsGenerated++;
+          }
+
           // Display the generated post
           logger.blank();
           const bangerInfo = post.metadata.bangerScore
@@ -538,7 +747,30 @@ export async function workCommand(options: WorkOptions): Promise<void> {
         logger.success(`  ✓ Saved ${posts.length} posts`);
       }
 
-      logger.info(`  Generated ${postsGenerated} posts`);
+      // Platform counts are tracked during generation
+
+      // Generate blog draft
+      logger.info('  Generating blog draft...');
+      const blogResult = await generateBlogDraft(llm, transcript, systemPrompt, styleGuide);
+      const blogPath = saveBlogDraft(config.blog?.outputDir || 'src/content/drafts', blogResult.title, blogResult.body, relativePath);
+      logger.success(`  Blog draft: ${relative(cwd, blogPath)}`);
+
+      // Update related existing drafts
+      logger.info('  Checking existing blog drafts...');
+      const updates = await updateRelatedBlogDrafts(llm, transcript, config.blog?.outputDir || 'src/content/drafts');
+      const updatedCount = updates.filter(u => u.updated).length;
+      if (updatedCount > 0) {
+        logger.success(`  Updated ${updatedCount} related blog draft${updatedCount === 1 ? '' : 's'}`);
+      }
+
+      // Processing summary
+      const summaryParts = [];
+      if (xPostsGenerated > 0) summaryParts.push(`${xPostsGenerated} X post${xPostsGenerated === 1 ? '' : 's'}`);
+      if (linkedinPostsGenerated > 0) summaryParts.push(`${linkedinPostsGenerated} LinkedIn post${linkedinPostsGenerated === 1 ? '' : 's'}`);
+      summaryParts.push('1 new blog draft');
+      if (updatedCount > 0) summaryParts.push(`${updatedCount} existing draft${updatedCount === 1 ? '' : 's'} updated`);
+
+      logger.info(`  Summary: ${summaryParts.join(', ')}`);
       totalProcessed++;
       totalGenerated += postsGenerated;
       remaining--;

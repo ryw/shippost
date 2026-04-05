@@ -49,18 +49,24 @@ function loadGranolaAuth(): string {
 }
 
 function loadGranolaDocuments(): Record<string, GranolaDocument> {
-  const cachePath = join(GRANOLA_DIR, 'cache-v3.json');
-  if (!existsSync(cachePath)) {
+  // Find the latest cache file (Granola upgrades cache-v3 -> v4 -> v6 etc.)
+  const cacheVersions = ['cache-v6.json', 'cache-v5.json', 'cache-v4.json', 'cache-v3.json'];
+  const cachePath = cacheVersions
+    .map(f => join(GRANOLA_DIR, f))
+    .find(p => existsSync(p));
+
+  if (!cachePath) {
     throw new Error('Granola cache not found. Open Granola app to sync your meetings first.');
   }
 
   const data = JSON.parse(readFileSync(cachePath, 'utf-8'));
 
-  if (!data || typeof data.cache !== 'string') {
-    throw new Error('Invalid Granola cache file: missing or invalid cache data');
+  if (!data || !data.cache) {
+    throw new Error('Invalid Granola cache file: missing cache data');
   }
 
-  const cache = JSON.parse(data.cache);
+  // v3 stores cache as a JSON string, v6+ stores it as an object
+  const cache = typeof data.cache === 'string' ? JSON.parse(data.cache) : data.cache;
 
   if (!cache || !cache.state || typeof cache.state.documents !== 'object') {
     throw new Error('Invalid Granola cache file: missing documents in cache state');
