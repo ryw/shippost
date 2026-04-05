@@ -94,6 +94,16 @@ export const logger = {
     console.log();
   },
 
+  // Write without newline (for inline progress updates)
+  write(message: string): void {
+    process.stdout.write(message);
+  },
+
+  // Write with newline (for completing inline progress)
+  writeln(message: string): void {
+    console.log(message);
+  },
+
   // Expose style helpers for custom formatting
   style,
   colors,

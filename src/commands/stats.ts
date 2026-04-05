@@ -101,10 +101,10 @@ export async function statsCommand(): Promise<void> {
     }
 
     // Header
-    console.log();
-    console.log(style.bold('┌─────────────────────────────────────────────────────────────────────┐'));
-    console.log(style.bold('│') + '                        ' + style.brightCyan(style.bold('📊 X STATS DASHBOARD')) + '                        ' + style.bold('│'));
-    console.log(style.bold('└─────────────────────────────────────────────────────────────────────┘'));
+    logger.blank();
+    logger.info(style.bold('┌─────────────────────────────────────────────────────────────────────┐'));
+    logger.info(style.bold('│') + '                        ' + style.brightCyan(style.bold('📊 X STATS DASHBOARD')) + '                        ' + style.bold('│'));
+    logger.info(style.bold('└─────────────────────────────────────────────────────────────────────┘'));
 
     // Authenticate
     const authService = new XAuthService(cwd, clientId);
@@ -116,13 +116,13 @@ export async function statsCommand(): Promise<void> {
     const meWithMetrics = await getMeWithMetrics(accessToken);
 
     // Account Section
-    console.log();
-    console.log(style.bold(' 👤 ACCOUNT'));
-    console.log(style.dim(' ─────────────────────────────────────────────────────────────────────'));
-    console.log(`    ${style.cyan('@' + me.username)}  ${style.dim(me.name)}`);
+    logger.blank();
+    logger.info(style.bold(' 👤 ACCOUNT'));
+    logger.info(style.dim(' ─────────────────────────────────────────────────────────────────────'));
+    logger.info(`    ${style.cyan('@' + me.username)}  ${style.dim(me.name)}`);
     if (meWithMetrics) {
-      console.log();
-      console.log(`    ${style.bold(formatNumber(meWithMetrics.followers))} ${style.dim('followers')}    ${style.bold(formatNumber(meWithMetrics.following))} ${style.dim('following')}    ${style.bold(formatNumber(meWithMetrics.tweets))} ${style.dim('tweets')}`);
+      logger.blank();
+      logger.info(`    ${style.bold(formatNumber(meWithMetrics.followers))} ${style.dim('followers')}    ${style.bold(formatNumber(meWithMetrics.following))} ${style.dim('following')}    ${style.bold(formatNumber(meWithMetrics.tweets))} ${style.dim('tweets')}`);
     }
 
     // Fetch recent tweets with metrics (up to 500 to cover ~30 days)
@@ -236,9 +236,9 @@ export async function statsCommand(): Promise<void> {
       return s + ' '.repeat(padding);
     };
     const printRow = (left: string, right: string) => {
-      console.log(pad(left, colWidth) + ' │ ' + right);
+      logger.info(pad(left, colWidth) + ' │ ' + right);
     };
-    const divider = () => console.log(style.dim('─'.repeat(colWidth) + '─┼─' + '─'.repeat(colWidth)));
+    const divider = () => logger.info(style.dim('─'.repeat(colWidth) + '─┼─' + '─'.repeat(colWidth)));
 
     // Sparklines
     const dailyPosts = getDailyPostCounts(tweets, 14);
@@ -257,7 +257,7 @@ export async function statsCommand(): Promise<void> {
       .sort((a, b) => b.avgEngagement - a.avgEngagement)
       .slice(0, 3);
 
-    console.log();
+    logger.blank();
     printRow(style.bold('📝 POSTING ACTIVITY'), style.bold('👀 IMPRESSIONS'));
     divider();
     printRow(`${style.dim('24h:')} ${style.bold(last24h.length.toString())} posts`, `${style.dim('24h posts:')} ${style.brightCyan(formatNumber(stats24h.impressions))}`);
@@ -270,7 +270,7 @@ export async function statsCommand(): Promise<void> {
     }
     printRow(`${style.dim('Trend:')} ${style.cyan(renderSparkline(dailyPosts))}`, `${style.dim('Trend:')} ${style.cyan(renderSparkline(dailyImpressions))}`);
 
-    console.log();
+    logger.blank();
     printRow(style.bold('🎯 90-DAY GOAL: 5M'), style.bold('💬 ENGAGEMENT (7d)'));
     divider();
     printRow(`${style.dim('Pace:')} ${formatNumber(Math.round(dailyAvg))}${style.dim('/day')}`, `${style.red('♥')} ${style.bold(formatNumber(stats7d.likes))} ${style.dim('likes')}`);
@@ -281,7 +281,7 @@ export async function statsCommand(): Promise<void> {
     printRow(goalMsg, `${style.yellow('🔖')} ${style.bold(formatNumber(stats7d.bookmarks))} ${style.dim('bookmarks')}`);
     printRow('', `${style.dim('Eng rate:')} ${style.bold(formatPercent(stats7d.engagementRate))}`);
 
-    console.log();
+    logger.blank();
     printRow(style.bold(`⏰ BEST TIMES`), style.bold('🏆 TOP POST (7d)'));
     divider();
     const topPost = [...last7d].sort((a, b) => b.impressions - a.impressions)[0];
@@ -289,10 +289,10 @@ export async function statsCommand(): Promise<void> {
     printRow(style.dim(`(${timezone.split('/')[1] || timezone})`), topPost ? style.dim(truncate(topPost.text, 34)) : '');
 
     // Footer
-    console.log();
+    logger.blank();
     const cacheNote = usingCache ? ' (cached)' : '';
-    console.log(style.dim(`─ Updated: ${new Date().toLocaleString()}${cacheNote} ─`));
-    console.log();
+    logger.info(style.dim(`─ Updated: ${new Date().toLocaleString()}${cacheNote} ─`));
+    logger.blank();
 
   } catch (error) {
     logger.blank();

@@ -58,13 +58,13 @@ export async function lastInputCommand(): Promise<void> {
       const summary = lines[0] || '';
       const truncated = summary.length > 80 ? summary.slice(0, 77) + '...' : summary;
 
-      console.log();
-      console.log(`Last transcript added: ${style.bold(dateStr)}`);
-      console.log(`  ${style.dim(newest.file)} ${style.dim(`(${daysAgo} day${daysAgo !== 1 ? 's' : ''} ago)`)}`);
+      logger.blank();
+      logger.info(`Last transcript added: ${style.bold(dateStr)}`);
+      logger.info(`  ${style.dim(newest.file)} ${style.dim(`(${daysAgo} day${daysAgo !== 1 ? 's' : ''} ago)`)}`);
       if (truncated) {
-        console.log(`  ${style.cyan(truncated)}`);
+        logger.info(`  ${style.cyan(truncated)}`);
       }
-      console.log();
+      logger.blank();
     }
 
   } catch (error) {

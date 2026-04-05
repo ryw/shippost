@@ -1,5 +1,6 @@
 import { spawnSync } from 'child_process';
 import * as path from 'path';
+import { logger } from './logger.js';
 
 /**
  * List of known safe editor basenames.
@@ -66,7 +67,7 @@ export function getSafeEditor(): { command: string; args: string[] } {
 
   // Check for dangerous characters that indicate injection attempts
   if (DANGEROUS_CHARS.test(requestedEditor)) {
-    console.warn(`Warning: Editor "${requestedEditor}" contains unsafe characters, using ${DEFAULT_EDITOR}`);
+    logger.warn(`Editor "${requestedEditor}" contains unsafe characters, using ${DEFAULT_EDITOR}`);
     return resolveEditorPath(DEFAULT_EDITOR);
   }
 
@@ -80,14 +81,14 @@ export function getSafeEditor(): { command: string; args: string[] } {
 
   // Check if it's a known safe editor
   if (!SAFE_EDITOR_BASENAMES.has(editorBasename)) {
-    console.warn(`Warning: Unknown editor "${editorBasename}", using ${DEFAULT_EDITOR}`);
+    logger.warn(`Unknown editor "${editorBasename}", using ${DEFAULT_EDITOR}`);
     return resolveEditorPath(DEFAULT_EDITOR);
   }
 
   // Validate each argument doesn't contain dangerous characters
   for (const arg of editorArgs) {
     if (DANGEROUS_CHARS.test(arg)) {
-      console.warn(`Warning: Editor arguments contain unsafe characters, using ${DEFAULT_EDITOR}`);
+      logger.warn(`Editor arguments contain unsafe characters, using ${DEFAULT_EDITOR}`);
       return resolveEditorPath(DEFAULT_EDITOR);
     }
   }

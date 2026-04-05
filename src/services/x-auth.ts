@@ -116,7 +116,7 @@ export class XAuthService {
     logger.blank();
     logger.info('1. Visit this URL in your browser:');
     logger.blank();
-    console.log(authUrl);
+    logger.info(authUrl);
     logger.blank();
     logger.info('2. Authorize the app');
     logger.info('3. You\'ll be redirected to a page that won\'t load (that\'s expected)');
