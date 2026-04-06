@@ -342,17 +342,25 @@ And this existing blog post:
 
 ${content}
 
-Does this post need updating based on the new transcript content? If yes, provide the updated content (full markdown/mdx with frontmatter preserved exactly). If no, respond with exactly "SKIP".
+Does this post need updating based on the new transcript content? If yes, respond with ONLY the updated file content — start with the --- frontmatter delimiter, no preamble, no commentary, no markdown fences. If no, respond with exactly "SKIP".
 
-Only update if the transcript content is genuinely related and would improve the post. Preserve all existing frontmatter fields and formatting.`;
+Only update if the transcript content is genuinely related and would improve the post. Preserve all existing frontmatter fields and formatting exactly.`;
 
       const response = await llm.generate(prompt);
 
-      if (response.trim() === 'SKIP') {
+      const trimmed = response.trim();
+      if (trimmed === 'SKIP') {
         results.push({ path: file.path, updated: false });
       } else {
-        writeFileSync(file.path, response.trim(), 'utf-8');
-        results.push({ path: file.path, updated: true });
+        // Extract the actual file content — find the first --- frontmatter delimiter
+        const fmStart = trimmed.indexOf('---');
+        if (fmStart >= 0) {
+          writeFileSync(file.path, trimmed.slice(fmStart), 'utf-8');
+          results.push({ path: file.path, updated: true });
+        } else {
+          // No valid frontmatter found — don't overwrite
+          results.push({ path: file.path, updated: false });
+        }
       }
     } catch {
       results.push({ path: file.path, updated: false });

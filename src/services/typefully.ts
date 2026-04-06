@@ -22,9 +22,25 @@ export class TypefullyService {
   }
 
   /**
-   * Create a draft in Typefully (X/Twitter only)
+   * Create a draft in Typefully for the given platform
    */
-  async createDraft(content: string): Promise<TypefullyDraftResponse> {
+  async createDraft(content: string, platform: 'x' | 'linkedin' = 'x'): Promise<TypefullyDraftResponse> {
+    const platforms: Record<string, unknown> = {};
+
+    if (platform === 'linkedin') {
+      platforms.linkedin = {
+        enabled: true,
+        posts: [{ text: content }],
+        settings: {},
+      };
+    } else {
+      platforms.x = {
+        enabled: true,
+        posts: [{ text: content }],
+        settings: {},
+      };
+    }
+
     const response = await fetch(`${TYPEFULLY_API_URL}/social-sets/${this.socialSetId}/drafts`, {
       method: 'POST',
       headers: {
@@ -32,13 +48,7 @@ export class TypefullyService {
         'Authorization': `Bearer ${this.apiKey}`,
       },
       body: JSON.stringify({
-        platforms: {
-          x: {
-            enabled: true,
-            posts: [{ text: content }],
-            settings: {},
-          },
-        },
+        platforms,
         share: true,
       }),
     });

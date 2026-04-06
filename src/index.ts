@@ -20,6 +20,7 @@ import { syncPromptsCommand } from './commands/sync-prompts.js';
 import { lastInputCommand } from './commands/last-input.js';
 import { blogCommand } from './commands/blog.js';
 import { granolaSyncCommand } from './commands/granola-sync.js';
+import { unfollowCommand } from './commands/unfollow.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -120,5 +121,17 @@ program
   .option('--count <n>', 'Number of transcripts to sync', parseInt)
   .option('--force', 'Re-sync all transcripts (ignore previous sync state)')
   .action(granolaSyncCommand);
+
+program
+  .command('unfollow')
+  .description('Clean up your following list to improve follower ratio and engagement')
+  .option('--target <n>', 'Keep unfollowing until you follow this many accounts', parseInt)
+  .option('--dry-run', 'Show candidates without unfollowing')
+  .option('--no-follow-back', 'Only unfollow accounts that don\'t follow you back')
+  .option('--inactive', 'Only unfollow inactive accounts (<10 tweets)')
+  .option('--min-followers <n>', 'Min follower count to keep (default: 100)', parseInt)
+  .option('--batch <n>', 'Number of accounts per batch (default: 50)', parseInt)
+  .option('-y, --yes', 'Skip confirmation prompt')
+  .action(unfollowCommand);
 
 program.parse();

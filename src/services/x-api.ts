@@ -160,7 +160,7 @@ export class XApiService {
 
       const timeline = await this.client.v2.homeTimeline({
         max_results: limit,
-        'tweet.fields': ['created_at', 'text', 'author_id', 'public_metrics', 'note_tweet'],
+        'tweet.fields': ['created_at', 'text', 'author_id', 'public_metrics', 'note_tweet', 'conversation_id'],
         expansions: ['author_id'],
         'user.fields': [...userFields],
         exclude: ['retweets'], // Include replies but not retweets
@@ -197,6 +197,7 @@ export class XApiService {
           likeCount: metrics?.like_count,
           replyCount: metrics?.reply_count,
           retweetCount: metrics?.retweet_count,
+          conversationId: tweetWithMetrics.conversation_id,
         });
 
         if (tweets.length >= maxResults) {
@@ -558,5 +559,80 @@ export class XApiService {
     }
 
     return status;
+  }
+
+  /**
+   * Get accounts the authenticated user is following
+   * Returns paginated results with user metadata
+   */
+  async getFollowing(maxResults: number = 1000): Promise<Array<{
+    id: string;
+    username: string;
+    name: string;
+    followersCount: number;
+    followingCount: number;
+    tweetCount: number;
+    followsBack: boolean;
+    lastTweetAt?: string;
+  }>> {
+    const me = await this.getMe();
+    const results: Array<{
+      id: string;
+      username: string;
+      name: string;
+      followersCount: number;
+      followingCount: number;
+      tweetCount: number;
+      followsBack: boolean;
+      lastTweetAt?: string;
+    }> = [];
+
+    try {
+      let nextToken: string | undefined;
+
+      do {
+        const response = await this.client.v2.following(me.id, {
+          max_results: 100,
+          'user.fields': ['public_metrics', 'created_at'],
+          ...(nextToken ? { pagination_token: nextToken } : {}),
+        });
+
+        const users = response.data || [];
+        for (const user of users) {
+          const userWithMetrics = user as UserV2WithMetrics;
+          const metrics = userWithMetrics.public_metrics;
+
+          results.push({
+            id: user.id,
+            username: user.username,
+            name: user.name,
+            followersCount: metrics?.followers_count || 0,
+            followingCount: metrics?.following_count || 0,
+            tweetCount: metrics?.tweet_count || 0,
+            followsBack: false, // Will be determined separately if needed
+          });
+
+          if (results.length >= maxResults) return results;
+        }
+
+        nextToken = response.meta?.next_token;
+      } while (nextToken);
+
+      return results;
+    } catch (error) {
+      handleApiError(error as TwitterApiError, 'Failed to fetch following list');
+    }
+  }
+
+  /**
+   * Unfollow a user by their ID
+   */
+  async unfollowUser(targetUserId: string): Promise<void> {
+    try {
+      const me = await this.getMe();
+      await this.client.v2.unfollow(me.id, targetUserId);
+    } catch (error) {
+      handleApiError(error as TwitterApiError, 'Failed to unfollow user');
+    }
   }
 }

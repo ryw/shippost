@@ -22,7 +22,7 @@ function escapeHtml(str: string): string {
 // Port 9876 to avoid conflicts with common dev servers (3000, 8080, etc.)
 const CALLBACK_PORT = 9876;
 const REDIRECT_URI = `http://127.0.0.1:${CALLBACK_PORT}/callback`;
-const SCOPES = ['tweet.read', 'tweet.write', 'users.read', 'like.write', 'offline.access'];
+const SCOPES = ['tweet.read', 'tweet.write', 'users.read', 'like.write', 'follows.read', 'follows.write', 'offline.access'];
 
 export class XAuthService {
   private cwd: string;

@@ -23,7 +23,8 @@ function displayPostForReview(post: Post, remaining: number): void {
   const scoreText = post.metadata.bangerScore ? `${scoreEmoji} ${post.metadata.bangerScore}/99` : 'No score';
   const strategyText = post.metadata.strategy?.name || 'No strategy';
 
-  logger.info(`[${remaining} remaining] ${scoreText} • ${strategyText}`);
+  const platformText = post.platform === 'linkedin' ? 'LinkedIn' : 'X';
+  logger.info(`[${remaining} remaining] ${platformText} • ${scoreText} • ${strategyText}`);
 
   // Post content
   logger.info('  ' + '─'.repeat(70));
@@ -171,7 +172,7 @@ export async function reviewCommand(options: ReviewOptions): Promise<void> {
           if (!typefully) {
             typefully = new TypefullyService(config.typefully?.socialSetId);
           }
-          const draft = await typefully.createDraft(post.content);
+          const draft = await typefully.createDraft(post.content, post.platform || 'x');
           post.metadata.typefullyDraftId = draft.id;
           staged++;
           logger.success(`Staged → Typefully [${remaining - 1} remaining]`);

@@ -58,6 +58,7 @@ interface ReplyOpportunity {
   tweet: Tweet;
   suggestedReply: string;
   reasoning: string;
+  parentTweet?: Tweet; // For replies to replies
 }
 
 interface ParsedReplyItem {
@@ -72,6 +73,22 @@ function displayTweetForReply(opportunity: ReplyOpportunity, index: number, tota
 
   logger.blank();
   logger.info(style.dim(`─── [${index + 1}/${total}] ` + '─'.repeat(width - 12)));
+
+  // If this is a reply to a reply, show the parent tweet context first (dimmed)
+  if (opportunity.parentTweet) {
+    const parentAuthor = opportunity.parentTweet.authorUsername
+      ? style.dim(`@${opportunity.parentTweet.authorUsername}`)
+      : style.dim('Unknown');
+    const parentTimeAgo = style.dim(formatTimeAgo(opportunity.parentTweet.createdAt));
+
+    logger.info(style.dim(`┌─ Original: ${parentAuthor} ${style.dim('•')} ${parentTimeAgo}`));
+    const parentLines = opportunity.parentTweet.text.split('\n');
+    parentLines.forEach((line) => {
+      logger.info(style.dim(`│   ${line}`));
+    });
+    logger.info(style.dim('└─'));
+    logger.blank();
+  }
 
   // Author info with styling
   const author = opportunity.tweet.authorUsername
@@ -88,6 +105,9 @@ function displayTweetForReply(opportunity: ReplyOpportunity, index: number, tota
   const retweets = formatCount(opportunity.tweet.retweetCount);
   const engagementStr = `${style.red('♥')}${style.dim(likes)} ${style.blue('💬')}${style.dim(replies)} ${style.green('↻')}${style.dim(retweets)}`;
 
+  // Label for reply target
+  const replyLabel = opportunity.parentTweet ? 'Replying to this reply:' : 'Replying to this tweet:';
+  logger.info(style.dim(replyLabel));
   logger.info(`${author}${followers} ${style.dim('•')} ${timeAgo}  ${engagementStr}`);
 
   // Tweet content
@@ -244,11 +264,16 @@ function parseReplyOpportunities(
         const tweetIndex = item.tweetNumber - 1;
         return tweetIndex >= 0 && tweetIndex < tweets.length;
       })
-      .map((item) => ({
-        tweet: tweets[item.tweetNumber - 1],
-        suggestedReply: item.suggestedReply || '',
-        reasoning: item.reasoning || '',
-      }));
+      .map((item) => {
+        const tweet = tweets[item.tweetNumber - 1];
+        const parentTweet = (tweet as any).parentTweetForContext;
+        return {
+          tweet,
+          suggestedReply: item.suggestedReply || '',
+          reasoning: item.reasoning || '',
+          parentTweet,
+        };
+      });
   } catch (error) {
     logger.error(`Failed to parse LLM response: ${(error as Error).message}`);
     return [];
@@ -396,13 +421,17 @@ export async function replyCommand(options: ReplyOptions): Promise<void> {
       logger.info(style.dim(`Filtered ${beforeSkipFilter - tweets.length} previously skipped tweets`));
     }
 
-    // For Basic tier: filter to accounts with 10k+ followers
+    // For Basic tier: filter by engagement rate instead of raw follower count
     if (includeMetrics) {
-      const MIN_FOLLOWERS = 10000;
-      const beforeFollowerFilter = tweets.length;
-      tweets = tweets.filter((t) => (t.authorFollowersCount || 0) >= MIN_FOLLOWERS);
-      if (beforeFollowerFilter > tweets.length) {
-        logger.info(style.dim(`Filtered ${beforeFollowerFilter - tweets.length} tweets from accounts with <10k followers`));
+      const beforeEngagementFilter = tweets.length;
+      tweets = tweets.filter((t) => {
+        const engagementRate = ((t.likeCount || 0) + (t.replyCount || 0) + (t.retweetCount || 0)) / Math.max(t.authorFollowersCount || 1, 1);
+        const isBigAccount = (t.authorFollowersCount || 0) >= 50000;
+        const isHighEngagement = engagementRate >= 0.01; // 1% engagement rate
+        return isBigAccount || isHighEngagement;
+      });
+      if (beforeEngagementFilter > tweets.length) {
+        logger.info(style.dim(`Filtered ${beforeEngagementFilter - tweets.length} tweets with low engagement rate`));
       }
     }
 
@@ -411,16 +440,68 @@ export async function replyCommand(options: ReplyOptions): Promise<void> {
       process.exit(1);
     }
 
-    // For Basic tier: sort by follower count (descending) and recency
+    // For Basic tier: Add replies from high-engagement threads as additional opportunities
+    if (includeMetrics) {
+      const HIGH_REPLY_THRESHOLD = 10;
+      const bigThreadTweets = tweets.filter((t) => (t.replyCount || 0) >= HIGH_REPLY_THRESHOLD);
+
+      if (bigThreadTweets.length > 0) {
+        logger.info(`Found ${bigThreadTweets.length} tweets with high reply counts, fetching conversation replies...`);
+
+        // Limit to top 3 most-engaged conversations to avoid rate limit issues
+        const topConversations = bigThreadTweets
+          .sort((a, b) => (b.replyCount || 0) - (a.replyCount || 0))
+          .slice(0, 3);
+
+        const repliesFromThreads: Tweet[] = [];
+        for (const parentTweet of topConversations) {
+          try {
+            const conversationReplies = await apiService.getRepliesFromOthers(parentTweet.id, 5);
+            // Add parentTweet reference to these replies for display context
+            for (const reply of conversationReplies) {
+              (reply as any).parentTweetForContext = parentTweet;
+            }
+            repliesFromThreads.push(...conversationReplies);
+          } catch {
+            // Silently continue if we can't fetch replies
+          }
+        }
+
+        if (repliesFromThreads.length > 0) {
+          logger.info(style.dim(`Added ${repliesFromThreads.length} replies from big threads as additional candidates`));
+          tweets.push(...repliesFromThreads);
+        }
+      }
+    }
+
+    // For Basic tier: sort by recency first, engagement second
     if (includeMetrics) {
       tweets = tweets.sort((a, b) => {
-        // Primary: follower count (higher first)
-        const followerDiff = (b.authorFollowersCount || 0) - (a.authorFollowersCount || 0);
-        if (followerDiff !== 0) return followerDiff;
-        // Secondary: recency (newer first)
+        // Calculate tweet age in minutes
+        const ageA = (Date.now() - new Date(a.createdAt).getTime()) / (1000 * 60);
+        const ageB = (Date.now() - new Date(b.createdAt).getTime()) / (1000 * 60);
+
+        // Primary: tweets less than 60 minutes old sort above older tweets
+        const isRecentA = ageA < 60;
+        const isRecentB = ageB < 60;
+
+        if (isRecentA && !isRecentB) return -1;
+        if (isRecentB && !isRecentA) return 1;
+
+        // Secondary: within same recency tier, sort by engagement rate
+        if (isRecentA === isRecentB) {
+          const engagementA = ((a.likeCount || 0) + (a.replyCount || 0) + (a.retweetCount || 0)) / Math.max(a.authorFollowersCount || 1, 1);
+          const engagementB = ((b.likeCount || 0) + (b.replyCount || 0) + (b.retweetCount || 0)) / Math.max(b.authorFollowersCount || 1, 1);
+
+          if (engagementA !== engagementB) {
+            return engagementB - engagementA; // Higher engagement first
+          }
+        }
+
+        // Tertiary: by recency (newer first)
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       });
-      logger.success(`Fetched ${tweets.length} tweets (sorted by influence & recency)`);
+      logger.success(`Fetched ${tweets.length} tweets (sorted by recency & engagement)`);
     } else {
       logger.success(`Fetched ${tweets.length} tweets`);
     }
