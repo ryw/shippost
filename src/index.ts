@@ -127,9 +127,8 @@ program
   .description('Clean up your following list to improve follower ratio and engagement')
   .option('--target <n>', 'Keep unfollowing until you follow this many accounts', parseInt)
   .option('--dry-run', 'Show candidates without unfollowing')
-  .option('--no-follow-back', 'Only unfollow accounts that don\'t follow you back')
   .option('--inactive', 'Only unfollow inactive accounts (<10 tweets)')
-  .option('--min-followers <n>', 'Min follower count to keep (default: 100)', parseInt)
+  .option('--min-followers <n>', 'Min follower threshold for candidates (default: 500)', parseInt)
   .option('--batch <n>', 'Number of accounts per batch (default: 50)', parseInt)
   .option('-y, --yes', 'Skip confirmation prompt')
   .action(unfollowCommand);

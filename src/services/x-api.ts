@@ -565,7 +565,7 @@ export class XApiService {
    * Get accounts the authenticated user is following
    * Returns paginated results with user metadata
    */
-  async getFollowing(maxResults: number = 1000): Promise<Array<{
+  async getFollowing(maxResults: number = 1000, followerIds?: Set<string>): Promise<Array<{
     id: string;
     username: string;
     name: string;
@@ -609,7 +609,7 @@ export class XApiService {
             followersCount: metrics?.followers_count || 0,
             followingCount: metrics?.following_count || 0,
             tweetCount: metrics?.tweet_count || 0,
-            followsBack: false, // Will be determined separately if needed
+            followsBack: followerIds ? followerIds.has(user.id) : false,
           });
 
           if (results.length >= maxResults) return results;

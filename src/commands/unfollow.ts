@@ -1,3 +1,5 @@
+import { existsSync, readFileSync, writeFileSync } from 'fs';
+import { join } from 'path';
 import { FileSystemService } from '../services/file-system.js';
 import { XAuthService } from '../services/x-auth.js';
 import { XApiService, RateLimitError } from '../services/x-api.js';
@@ -7,11 +9,49 @@ import { NotInitializedError } from '../utils/errors.js';
 import { readlineSync } from '../utils/readline.js';
 import { formatFollowerCount } from '../utils/format.js';
 
+const FOLLOWING_CACHE_FILE = '.shippost-following-cache.json';
+const FOLLOWING_CACHE_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+interface FollowingAccount {
+  id: string;
+  username: string;
+  name: string;
+  followersCount: number;
+  followingCount: number;
+  tweetCount: number;
+  followsBack: boolean;
+}
+
+function loadFollowingCache(cwd: string): FollowingAccount[] | null {
+  const cacheFile = join(cwd, FOLLOWING_CACHE_FILE);
+  if (!existsSync(cacheFile)) return null;
+  try {
+    const data = JSON.parse(readFileSync(cacheFile, 'utf8'));
+    if (Date.now() - data.timestamp < FOLLOWING_CACHE_MAX_AGE) {
+      return data.accounts;
+    }
+    return null; // stale
+  } catch {
+    return null;
+  }
+}
+
+function saveFollowingCache(cwd: string, accounts: FollowingAccount[]): void {
+  const cacheFile = join(cwd, FOLLOWING_CACHE_FILE);
+  writeFileSync(cacheFile, JSON.stringify({ timestamp: Date.now(), accounts }, null, 2));
+}
+
+function removeFromCache(cwd: string, userId: string): void {
+  const accounts = loadFollowingCache(cwd);
+  if (!accounts) return;
+  const filtered = accounts.filter((a) => a.id !== userId);
+  saveFollowingCache(cwd, filtered);
+}
+
 interface UnfollowOptions {
   target?: number;
   dryRun?: boolean;
   minFollowers?: number;
-  noFollowBack?: boolean;
   inactive?: boolean;
   batch?: number;
   yes?: boolean;
@@ -33,29 +73,59 @@ function buildCandidates(
   options: UnfollowOptions
 ): UnfollowCandidate[] {
   const candidates: UnfollowCandidate[] = [];
+  const minFollowers = options.minFollowers || 500;
 
   for (const account of following) {
     const reasons: string[] = [];
 
-    if (!account.followsBack) reasons.push('no follow-back');
-    if (account.followersCount < (options.minFollowers || 100)) {
+    if (account.followersCount < minFollowers) {
       reasons.push(`${formatFollowerCount(account.followersCount)} followers`);
     }
     if (account.tweetCount < 10) reasons.push(`${account.tweetCount} tweets (inactive)`);
 
-    if (options.noFollowBack && !account.followsBack) {
-      candidates.push({ ...account, reason: reasons.join(', ') || 'no follow-back' });
-    } else if (options.inactive && account.tweetCount < 10) {
-      candidates.push({ ...account, reason: reasons.join(', ') || 'inactive' });
-    } else if (!options.noFollowBack && !options.inactive) {
-      if (!account.followsBack && account.followersCount < 50000) {
-        candidates.push({ ...account, reason: reasons.join(', ') || 'no follow-back' });
+    // Quality score: tweets per 1k followers
+    // Healthy accounts: 10-500 tweets per 1k followers
+    // Dead/bot: <1 tweet per 1k followers (high followers, no activity)
+    // Spammy: >1000 tweets per 1k followers (low followers, tons of tweets)
+    const tweetsPerKFollowers = account.followersCount > 0
+      ? (account.tweetCount / account.followersCount) * 1000
+      : account.tweetCount > 0 ? 9999 : 0;
+
+    const isLowQuality =
+      account.tweetCount < 10 ||                           // inactive
+      account.followersCount < minFollowers ||              // low reach
+      tweetsPerKFollowers < 1 ||                            // dead account (has followers but doesn't post)
+      tweetsPerKFollowers > 1000;                           // spammy (posts tons, nobody follows)
+
+    if (options.inactive) {
+      if (account.tweetCount < 10) {
+        candidates.push({ ...account, reason: reasons.join(', ') || 'inactive' });
       }
+    } else if (isLowQuality) {
+      // Add quality context to reason
+      if (tweetsPerKFollowers < 1 && account.followersCount >= minFollowers) {
+        reasons.push('dead account');
+      } else if (tweetsPerKFollowers > 1000) {
+        reasons.push('spammy ratio');
+      }
+      candidates.push({ ...account, reason: reasons.join(', ') || 'low quality' });
     }
   }
 
-  // Sort: lowest follower count first (least valuable follows)
-  candidates.sort((a, b) => a.followersCount - b.followersCount);
+  // Sort: lowest quality first
+  candidates.sort((a, b) => {
+    // Quality score: lower = less valuable = unfollow first
+    // Accounts with 0 tweets go first, then by follower count
+    if (a.tweetCount === 0 && b.tweetCount > 0) return -1;
+    if (b.tweetCount === 0 && a.tweetCount > 0) return 1;
+    const ratioA = a.followersCount > 0 ? a.tweetCount / a.followersCount : 0;
+    const ratioB = b.followersCount > 0 ? b.tweetCount / b.followersCount : 0;
+    // Accounts furthest from healthy ratio (10-500 per 1k) sort first
+    const healthyMid = 0.1; // 100 tweets per 1k followers
+    const distA = Math.abs(Math.log((ratioA || 0.001) / healthyMid));
+    const distB = Math.abs(Math.log((ratioB || 0.001) / healthyMid));
+    return distB - distA; // furthest from healthy = first
+  });
   return candidates;
 }
 
@@ -94,22 +164,28 @@ export async function unfollowCommand(options: UnfollowOptions): Promise<void> {
     while (true) {
       logger.section(totalUnfollowed === 0 ? '[2/3] Analyzing who you follow...' : `[2/3] Re-fetching following list...`);
 
-      logger.info('Fetching following list...');
-      let following;
-      try {
-        following = await apiService.getFollowing(6000);
-      } catch (error) {
-        if (error instanceof RateLimitError && options.target) {
-          const resetTime = error.resetAt && !isNaN(error.resetAt.getTime()) ? error.resetAt.getTime() : 0;
-          const waitMs = resetTime > Date.now()
-            ? resetTime - Date.now() + 5000
-            : 15 * 60 * 1000;
-          const waitMin = Math.ceil(waitMs / 60000);
-          logger.info(`${style.yellow('⏳')} Rate limited on fetch. Waiting ${waitMin} min...`);
-          await new Promise((resolve) => setTimeout(resolve, waitMs));
+      let following = loadFollowingCache(cwd);
+      if (following) {
+        logger.info(style.dim('Using cached following list'));
+      } else {
+        logger.info('Fetching following list...');
+        try {
           following = await apiService.getFollowing(6000);
-        } else {
-          throw error;
+          saveFollowingCache(cwd, following);
+        } catch (error) {
+          if (error instanceof RateLimitError && options.target) {
+            const resetTime = error.resetAt && !isNaN(error.resetAt.getTime()) ? error.resetAt.getTime() : 0;
+            const waitMs = resetTime > Date.now()
+              ? resetTime - Date.now() + 5000
+              : 15 * 60 * 1000;
+            const waitMin = Math.ceil(waitMs / 60000);
+            logger.info(`${style.yellow('⏳')} Rate limited on fetch. Waiting ${waitMin} min...`);
+            await new Promise((resolve) => setTimeout(resolve, waitMs));
+            following = await apiService.getFollowing(6000);
+            saveFollowingCache(cwd, following);
+          } else {
+            throw error;
+          }
         }
       }
       currentFollowing = following.length;
@@ -138,7 +214,7 @@ export async function unfollowCommand(options: UnfollowOptions): Promise<void> {
         logger.blank();
         if (options.target && currentFollowing > options.target) {
           logger.info(`No more candidates match filters, but still following ${currentFollowing} (target: ${options.target}).`);
-          logger.info('Try broader filters: --no-follow-back or --min-followers <n>');
+          logger.info('Try: --min-followers <n> to raise the threshold, or --inactive');
         } else {
           logger.success('No unfollow candidates found with current filters.');
         }
@@ -152,9 +228,8 @@ export async function unfollowCommand(options: UnfollowOptions): Promise<void> {
 
       for (let i = 0; i < batch.length; i++) {
         const c = batch[i];
-        const followBack = c.followsBack ? style.green('✓ follows you') : style.dim('✗ no follow-back');
         logger.info(
-          `  ${style.dim(`${i + 1}.`)} @${c.username} ${style.dim('•')} ${formatFollowerCount(c.followersCount)} followers ${style.dim('•')} ${followBack} ${style.dim('•')} ${style.dim(c.reason)}`
+          `  ${style.dim(`${i + 1}.`)} @${c.username} ${style.dim('•')} ${formatFollowerCount(c.followersCount)} followers ${style.dim('•')} ${c.tweetCount} tweets ${style.dim('•')} ${style.dim(c.reason)}`
         );
       }
 
@@ -189,6 +264,7 @@ export async function unfollowCommand(options: UnfollowOptions): Promise<void> {
         const c = batch[i];
         try {
           await apiService.unfollowUser(c.id);
+          removeFromCache(cwd, c.id);
           batchUnfollowed++;
           totalUnfollowed++;
           const remaining = options.target ? ` • ${currentFollowing - totalUnfollowed} → ${options.target}` : '';
@@ -196,7 +272,7 @@ export async function unfollowCommand(options: UnfollowOptions): Promise<void> {
 
           // Pace at 1.5s to stay under rate limits
           if (i < batch.length - 1) {
-            await new Promise((resolve) => setTimeout(resolve, 1500));
+            await new Promise((resolve) => setTimeout(resolve, 20000)); // 20s to stay under 50/15min limit
           }
         } catch (error) {
           if (error instanceof RateLimitError) {
@@ -232,9 +308,14 @@ export async function unfollowCommand(options: UnfollowOptions): Promise<void> {
       // If no target, just do one batch
       if (!options.target) break;
 
-      // Brief pause between batches
-      logger.info(style.dim('Pausing before next batch...'));
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      // Refresh cache between batches (free within X's 24h window)
+      logger.info(style.dim('Refreshing following list (cached by X, no rate cost)...'));
+      try {
+        const refreshed = await apiService.getFollowing(6000);
+        saveFollowingCache(cwd, refreshed);
+      } catch {
+        // If refresh fails, local cache is still usable
+      }
     }
 
     // Final summary
