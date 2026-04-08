@@ -4,6 +4,7 @@ import { FileSystemService } from '../services/file-system.js';
 import { XAuthService } from '../services/x-auth.js';
 import { XApiService } from '../services/x-api.js';
 import { logger } from '../utils/logger.js';
+import { formatCount } from '../utils/format.js';
 import { isShippostProject } from '../utils/validation.js';
 import { NotInitializedError } from '../utils/errors.js';
 import type { UserV2WithMetrics, TweetV2WithMetrics } from '../types/x-api-responses.js';
@@ -32,11 +33,11 @@ interface FetchError {
   details?: string;
 }
 
-function formatNumber(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return n.toString();
-}
+/**
+ * Alias for formatCount to maintain function name consistency within stats module.
+ * Uses the shared utility function from utils/format.ts.
+ */
+const formatNumber = formatCount;
 
 function formatPercent(n: number): string {
   return `${n.toFixed(2)}%`;
