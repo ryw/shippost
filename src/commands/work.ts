@@ -11,6 +11,7 @@ import { NotInitializedError } from '../utils/errors.js';
 import { buildBangerEvalPrompt, parseBangerEval } from '../utils/banger-eval.js';
 import type { PostGenerationResult } from '../types/post.js';
 import type { StrategyCategory } from '../types/strategy.js';
+import { granolaSyncCommand } from './granola-sync.js';
 
 interface WorkOptions {
   model?: string;
@@ -431,6 +432,14 @@ export async function workCommand(options: WorkOptions): Promise<void> {
   }
 
   try {
+
+    // Step 0: Sync Granola transcripts
+    logger.section('[0/3] Syncing Granola transcripts...');
+    try {
+      await granolaSyncCommand({});
+    } catch {
+      logger.info('Granola sync skipped (not configured or no new transcripts)');
+    }
 
     // Step 1: Validate environment
     logger.section('[1/3] Checking environment...');
