@@ -54,6 +54,13 @@ interface ReplyOptions {
   count?: number;
 }
 
+/**
+ * Extended Tweet type that includes parent context for replies-to-replies
+ */
+interface TweetWithParentContext extends Tweet {
+  parentTweetForContext?: Tweet;
+}
+
 interface ReplyOpportunity {
   tweet: Tweet;
   suggestedReply: string;
@@ -265,8 +272,8 @@ function parseReplyOpportunities(
         return tweetIndex >= 0 && tweetIndex < tweets.length;
       })
       .map((item) => {
-        const tweet = tweets[item.tweetNumber - 1];
-        const parentTweet = (tweet as any).parentTweetForContext;
+        const tweet = tweets[item.tweetNumber - 1] as TweetWithParentContext;
+        const parentTweet = tweet.parentTweetForContext;
         return {
           tweet,
           suggestedReply: item.suggestedReply || '',
@@ -459,7 +466,7 @@ export async function replyCommand(options: ReplyOptions): Promise<void> {
             const conversationReplies = await apiService.getRepliesFromOthers(parentTweet.id, 5);
             // Add parentTweet reference to these replies for display context
             for (const reply of conversationReplies) {
-              (reply as any).parentTweetForContext = parentTweet;
+              (reply as TweetWithParentContext).parentTweetForContext = parentTweet;
             }
             repliesFromThreads.push(...conversationReplies);
           } catch {
