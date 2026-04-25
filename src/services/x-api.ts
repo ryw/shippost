@@ -70,6 +70,8 @@ export interface Tweet {
   retweetCount?: number;
   isReply?: boolean;
   conversationId?: string;
+  /** Parent tweet context when this tweet is a reply being displayed with context */
+  parentTweetForContext?: Tweet;
 }
 
 export class XApiService {

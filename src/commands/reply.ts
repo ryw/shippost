@@ -266,7 +266,7 @@ function parseReplyOpportunities(
       })
       .map((item) => {
         const tweet = tweets[item.tweetNumber - 1];
-        const parentTweet = (tweet as any).parentTweetForContext;
+        const parentTweet = tweet.parentTweetForContext;
         return {
           tweet,
           suggestedReply: item.suggestedReply || '',
@@ -459,7 +459,7 @@ export async function replyCommand(options: ReplyOptions): Promise<void> {
             const conversationReplies = await apiService.getRepliesFromOthers(parentTweet.id, 5);
             // Add parentTweet reference to these replies for display context
             for (const reply of conversationReplies) {
-              (reply as any).parentTweetForContext = parentTweet;
+              reply.parentTweetForContext = parentTweet;
             }
             repliesFromThreads.push(...conversationReplies);
           } catch {
