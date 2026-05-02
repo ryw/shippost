@@ -72,6 +72,14 @@ export interface Tweet {
   conversationId?: string;
 }
 
+/**
+ * Tweet with additional context for reply workflows.
+ * Used when presenting a reply-to-reply in the context of its parent tweet.
+ */
+export interface TweetWithContext extends Tweet {
+  parentTweetForContext?: Tweet;
+}
+
 export class XApiService {
   private client: TwitterApi;
 

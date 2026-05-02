@@ -4,7 +4,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { FileSystemService } from '../services/file-system.js';
 import { XAuthService } from '../services/x-auth.js';
-import { XApiService, Tweet } from '../services/x-api.js';
+import { XApiService, Tweet, TweetWithContext } from '../services/x-api.js';
 import { createLLMService } from '../services/llm-factory.js';
 import { logger } from '../utils/logger.js';
 import { isShippostProject } from '../utils/validation.js';
@@ -265,8 +265,8 @@ function parseReplyOpportunities(
         return tweetIndex >= 0 && tweetIndex < tweets.length;
       })
       .map((item) => {
-        const tweet = tweets[item.tweetNumber - 1];
-        const parentTweet = (tweet as any).parentTweetForContext;
+        const tweet = tweets[item.tweetNumber - 1] as TweetWithContext;
+        const parentTweet = tweet.parentTweetForContext;
         return {
           tweet,
           suggestedReply: item.suggestedReply || '',
@@ -397,7 +397,7 @@ export async function replyCommand(options: ReplyOptions): Promise<void> {
       logger.info(`Fetching ${maxTweets} tweets from your timeline...`);
     }
 
-    let tweets = await apiService.getHomeTimeline(maxTweets, includeMetrics);
+    let tweets: TweetWithContext[] = await apiService.getHomeTimeline(maxTweets, includeMetrics);
 
     // Filter out user's own tweets
     tweets = tweets.filter((t) => t.authorUsername?.toLowerCase() !== user.username.toLowerCase());
@@ -453,15 +453,15 @@ export async function replyCommand(options: ReplyOptions): Promise<void> {
           .sort((a, b) => (b.replyCount || 0) - (a.replyCount || 0))
           .slice(0, 3);
 
-        const repliesFromThreads: Tweet[] = [];
+        const repliesFromThreads: TweetWithContext[] = [];
         for (const parentTweet of topConversations) {
           try {
             const conversationReplies = await apiService.getRepliesFromOthers(parentTweet.id, 5);
             // Add parentTweet reference to these replies for display context
             for (const reply of conversationReplies) {
-              (reply as any).parentTweetForContext = parentTweet;
+              const replyWithContext: TweetWithContext = { ...reply, parentTweetForContext: parentTweet };
+              repliesFromThreads.push(replyWithContext);
             }
-            repliesFromThreads.push(...conversationReplies);
           } catch {
             // Silently continue if we can't fetch replies
           }
