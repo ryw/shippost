@@ -38,3 +38,6 @@ coverage/
 
 # Beads local state
 .beads/.local_version
+
+# Hippo memory tool
+.hippo/
