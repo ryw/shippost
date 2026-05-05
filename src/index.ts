@@ -120,7 +120,13 @@ program
   .description('Sync Granola meeting transcripts to input/ directory')
   .option('--count <n>', 'Number of transcripts to sync', parseInt)
   .option('--force', 'Re-sync all transcripts (ignore previous sync state)')
-  .action(granolaSyncCommand);
+  .action(async (opts) => {
+    try {
+      await granolaSyncCommand(opts);
+    } catch {
+      process.exit(1);
+    }
+  });
 
 program
   .command('unfollow')

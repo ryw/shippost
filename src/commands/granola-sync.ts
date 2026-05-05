@@ -279,6 +279,8 @@ export async function granolaSyncCommand(options: GranolaSyncOptions): Promise<v
   } catch (error) {
     logger.blank();
     logger.error((error as Error).message);
-    process.exit(1);
+    // Re-throw so callers (e.g. `ship work`) can decide whether to abort
+    // or skip; the standalone CLI entry will translate this back to exit(1).
+    throw error;
   }
 }
