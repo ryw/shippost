@@ -11,6 +11,7 @@ import { NotInitializedError } from '../utils/errors.js';
 import { buildBangerEvalPrompt, parseBangerEval } from '../utils/banger-eval.js';
 import type { PostGenerationResult } from '../types/post.js';
 import type { StrategyCategory } from '../types/strategy.js';
+import type { LLMService } from '../services/llm-service.js';
 import { granolaSyncCommand } from './granola-sync.js';
 
 interface WorkOptions {
@@ -155,7 +156,7 @@ interface BlogGenerationResult {
 }
 
 async function generateBlogDraft(
-  llm: any,
+  llm: LLMService,
   transcript: string,
   systemPrompt: string,
   styleGuide: string
@@ -324,7 +325,7 @@ function findBlogPosts(dirs: string[]): Array<{ name: string; path: string; mtim
 }
 
 async function updateRelatedBlogPosts(
-  llm: any,
+  llm: LLMService,
   transcript: string,
   contentDirs: string[]
 ): Promise<Array<{ path: string; updated: boolean }>> {
