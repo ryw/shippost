@@ -12,6 +12,7 @@ import { buildBangerEvalPrompt, parseBangerEval } from '../utils/banger-eval.js'
 import type { PostGenerationResult } from '../types/post.js';
 import type { StrategyCategory } from '../types/strategy.js';
 import { granolaSyncCommand } from './granola-sync.js';
+import { writeCover } from '../utils/svg-cover.js';
 
 interface WorkOptions {
   model?: string;
@@ -152,6 +153,9 @@ interface BlogGenerationResult {
   faq: Array<{ question: string; answer: string }>;
   sources: Array<{ id: string; title: string; url: string }>;
   body: string;
+  motif: string;
+  accent?: string;
+  accent2?: string;
 }
 
 async function generateBlogDraft(
@@ -166,18 +170,24 @@ STYLE GUIDE:
 ${styleGuide}
 
 INSTRUCTIONS:
-Generate a blog post draft exploring the key themes from this transcript.
+Generate ONE short, atomic blog post — a single focused argument, not a collection of essays.
 
 Target audience: executive leadership at startups and knowledge-work organizations
 Topics: AI agents as software, enterprise AI operationalization, agent mesh/fabric
-Length: 800-1500 words
 Voice: business visionary, grounded in building experience
+
+SHAPE OF THE POST (this is the most important constraint):
+- 250-450 words in the body. Hard cap at 500.
+- ONE argument, ONE claim. Pick the strongest point in the transcript and write JUST that.
+- 3-5 short paragraphs. NO ## section headers. The post is itself one section.
+- Open with the claim or a sharp hook. Close with a forward-looking line or a "what to do" pivot.
+- Cut everything that does not directly support the single argument. If you have a second strong idea, throw it away — it is its own future post.
 
 Output ONLY valid JSON (no markdown fences, no commentary) with this exact structure:
 {
   "title": "Post Title Here",
   "slug": "short-slug-here",
-  "description": "One-sentence summary for SEO/social cards (under 160 chars)",
+  "description": "One-sentence summary for SEO/social cards (80-200 chars). Required range — too short fails validation.",
   "tags": ["ai", "software-engineering"],
   "takeaways": ["Key insight 1", "Key insight 2", "Key insight 3"],
   "faq": [
@@ -188,14 +198,27 @@ Output ONLY valid JSON (no markdown fences, no commentary) with this exact struc
     {"id": "short-kebab-id", "title": "Source Title", "url": "https://..."},
     {"id": "short-kebab-id", "title": "Source Title", "url": "https://..."}
   ],
-  "body": "Full markdown body here (use \\n for newlines)"
+  "motif": "one of: gap | blocks | flow | layers | mesh | harness | fragments | ascend | pipeline | horizon",
+  "body": "Full markdown body here (use \\n for newlines). 250-450 words, no ## headers, single argument."
 }
 
 Rules for the slug: 2-5 words, lowercase, hyphenated (e.g. "agents-are-software", "demo-vs-deployment").
 Rules for tags: pick 2-4 from [ai, software-engineering, tembo, startups, agents, enterprise].
-Rules for takeaways: exactly 3, one sentence each.
+Rules for description: 80-200 characters. Strict — under 80 or over 200 fails site validation.
+Rules for takeaways: exactly 3, one sentence each. NEVER use a bare colon mid-string in a takeaway (it breaks YAML parsing). Use a dash or rephrase.
 Rules for faq: exactly 2 entries, question and answer.
-Rules for sources: 2-4 real, verifiable external sources (articles, papers, blog posts) relevant to the post's themes. Use actual URLs that exist. Each id is a short kebab-case identifier.
+Rules for sources: exactly 2 real, verifiable external sources. Use actual URLs that exist (anthropic.com, github.blog, palantir.com, stratechery.com, a16z.com, tembo.io, martinfowler.com — or other URLs you are certain are real). Each id is a short kebab-case identifier.
+Rules for motif: pick the geometric cover that best fits the post's core metaphor:
+  - gap: bottleneck, chasm, demo-vs-deployment, missing layer
+  - blocks: knowledge work as software, code, generation, transformation
+  - flow: workflow, scoped agents, sequence, process
+  - layers: context, depth, layered systems, organizational layers
+  - mesh: distributed, atomic units, decomposition, network
+  - harness: interface, framework, container, governance, scaffold
+  - fragments: breakage, fragmentation, decay, homegrown failure
+  - ascend: growth, scaling, platform expansion, wedge-to-platform
+  - pipeline: production, deployment, throughput, factory
+  - horizon: long-term, patience, time, future, marathons
 
 TRANSCRIPT TO PROCESS:
 ${transcript}`;
@@ -217,6 +240,9 @@ ${transcript}`;
       faq: Array.isArray(parsed.faq) ? parsed.faq : [],
       sources: Array.isArray(parsed.sources) ? parsed.sources : [],
       body: (parsed.body || '').replace(/\\n/g, '\n'),
+      motif: typeof parsed.motif === 'string' ? parsed.motif : '',
+      accent: typeof parsed.accent === 'string' ? parsed.accent : undefined,
+      accent2: typeof parsed.accent2 === 'string' ? parsed.accent2 : undefined,
     };
   } catch {
     // Fallback: try to extract title and body from markdown response
@@ -235,8 +261,18 @@ ${transcript}`;
       faq: [],
       sources: [],
       body,
+      motif: '',
     };
   }
+}
+
+function quoteYamlString(s: string): string {
+  // YAML plain-scalar list items break when they contain a colon followed by
+  // whitespace (parser turns the line into a mapping, not a string). Quote
+  // anything that could trigger that — and escape embedded single quotes.
+  const needsQuoting = /:\s|^\s|\s$|^[!&*\-?|>%@`]|^[\[\]{}]/.test(s);
+  if (!needsQuoting) return s;
+  return `'${s.replace(/'/g, "''")}'`;
 }
 
 function createSlug(title: string): string {
@@ -251,7 +287,9 @@ function createSlug(title: string): string {
 function saveBlogDraft(
   outputDir: string,
   result: BlogGenerationResult,
-  sourceFile: string
+  sourceFile: string,
+  imageDir: string,
+  imagePathPrefix: string
 ): string {
   // Ensure output directory exists
   if (!existsSync(outputDir)) {
@@ -263,29 +301,41 @@ function saveBlogDraft(
   const filename = `${slug}.mdx`;
   const filePath = join(outputDir, filename);
 
+  // Generate the SVG cover. Falls back to a deterministic motif/accent if the
+  // model didn't pick valid ones.
+  const imageFilePath = join(imageDir, `${slug}.svg`);
+  writeCover(imageFilePath, {
+    slug,
+    motif: result.motif,
+    accent: result.accent,
+    accent2: result.accent2,
+  });
+  const imageWebPath = `${imagePathPrefix.replace(/\/$/, '')}/${slug}.svg`;
+
   // Build frontmatter matching published post format
-  const tagsYaml = result.tags.map((t: string) => `  - ${t}`).join('\n');
-  const takeawaysYaml = result.takeaways.map((t: string) => `  - ${t}`).join('\n');
+  const tagsYaml = result.tags.map((t: string) => `  - ${quoteYamlString(t)}`).join('\n');
+  const takeawaysYaml = result.takeaways.map((t: string) => `  - ${quoteYamlString(t)}`).join('\n');
 
   let faqYaml = '';
   if (result.faq.length > 0) {
     faqYaml = 'faq:\n' + result.faq.map((f: { question: string; answer: string }) =>
-      `  - question: "${f.question}"\n    answer: >-\n      ${f.answer}`
+      `  - question: "${f.question.replace(/"/g, '\\"')}"\n    answer: >-\n      ${f.answer}`
     ).join('\n');
   }
 
   let sourcesYaml = '';
   if (result.sources.length > 0) {
     sourcesYaml = 'sources:\n' + result.sources.map((s: { id: string; title: string; url: string }) =>
-      `  - id: ${s.id}\n    title: "${s.title}"\n    url: ${s.url}`
+      `  - id: ${s.id}\n    title: "${s.title.replace(/"/g, '\\"')}"\n    url: ${s.url}`
     ).join('\n');
   }
 
   const frontmatter = `---
-title: "${result.title}"
+title: "${result.title.replace(/"/g, '\\"')}"
 date: '${today}'
 description: >-
   ${result.description}
+image: ${imageWebPath}
 tags:
 ${tagsYaml}
 source: ${sourceFile}
@@ -839,7 +889,13 @@ export async function workCommand(options: WorkOptions): Promise<void> {
       // Generate blog draft
       logger.info('  Generating blog draft...');
       const blogResult = await generateBlogDraft(llm, transcript, systemPrompt, styleGuide);
-      const blogPath = saveBlogDraft(config.blog?.outputDir || 'src/content/drafts', blogResult, relativePath);
+      const blogPath = saveBlogDraft(
+        config.blog?.outputDir || 'src/content/drafts',
+        blogResult,
+        relativePath,
+        config.blog?.imageDir || 'public/images/posts',
+        config.blog?.imagePathPrefix || '/images/posts'
+      );
       logger.success(`  Blog draft: ${relative(cwd, blogPath)}`);
 
       // Update related existing blog posts (drafts + published)

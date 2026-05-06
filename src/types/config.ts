@@ -35,6 +35,8 @@ export interface T2pConfig {
   };
   blog?: {
     outputDir?: string;
+    imageDir?: string;
+    imagePathPrefix?: string;
   };
 }
 
