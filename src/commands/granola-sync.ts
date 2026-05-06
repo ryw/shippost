@@ -27,10 +27,20 @@ interface GranolaSyncState {
 const GRANOLA_DIR = join(homedir(), 'Library/Application Support/Granola');
 const STATE_FILE = '.granola-sync-state.json';
 
-function loadGranolaAuth(): string {
+const GRANOLA_API_HEADERS = {
+  'Content-Type': 'application/json',
+  'User-Agent': 'Granola/5.354.0',
+  'X-Client-Version': '5.354.0',
+};
+
+// Granola moved to encrypted local storage in 2026, so the on-disk cache
+// (cache-v6.json, granola.db) is no longer plaintext-readable. We instead
+// pull the still-readable refresh_token from the leftover supabase.json,
+// mint a fresh access_token, and hit the API directly.
+function loadGranolaRefreshToken(): string {
   const authPath = join(GRANOLA_DIR, 'supabase.json');
   if (!existsSync(authPath)) {
-    throw new Error('Granola not found. Make sure Granola app is installed and you are logged in.');
+    throw new Error('Granola credentials not found. Make sure the Granola app is installed and you are logged in.');
   }
 
   const authData = JSON.parse(readFileSync(authPath, 'utf-8'));
@@ -41,38 +51,66 @@ function loadGranolaAuth(): string {
 
   const tokens = JSON.parse(authData.workos_tokens);
 
-  if (!tokens || typeof tokens.access_token !== 'string') {
-    throw new Error('Invalid Granola auth file: missing access_token in workos_tokens');
+  if (!tokens || typeof tokens.refresh_token !== 'string') {
+    throw new Error('Invalid Granola auth file: missing refresh_token in workos_tokens');
   }
 
-  return tokens.access_token;
+  return tokens.refresh_token;
 }
 
-function loadGranolaDocuments(): Record<string, GranolaDocument> {
-  // Find the latest cache file (Granola upgrades cache-v3 -> v4 -> v6 etc.)
-  const cacheVersions = ['cache-v6.json', 'cache-v5.json', 'cache-v4.json', 'cache-v3.json'];
-  const cachePath = cacheVersions
-    .map(f => join(GRANOLA_DIR, f))
-    .find(p => existsSync(p));
+async function refreshAccessToken(refreshToken: string): Promise<string> {
+  const response = await fetch('https://api.granola.ai/v1/refresh-access-token', {
+    method: 'POST',
+    headers: GRANOLA_API_HEADERS,
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  });
 
-  if (!cachePath) {
-    throw new Error('Granola cache not found. Open Granola app to sync your meetings first.');
+  if (!response.ok) {
+    throw new Error(
+      `Failed to refresh Granola access token (HTTP ${response.status}). ` +
+      `Try logging out and back into the Granola app.`
+    );
   }
 
-  const data = JSON.parse(readFileSync(cachePath, 'utf-8'));
+  const data = await response.json() as { access_token?: unknown };
+  if (typeof data.access_token !== 'string') {
+    throw new Error('Granola refresh response missing access_token');
+  }
+  return data.access_token;
+}
 
-  if (!data || !data.cache) {
-    throw new Error('Invalid Granola cache file: missing cache data');
+async function fetchGranolaDocuments(accessToken: string): Promise<Record<string, GranolaDocument>> {
+  const PAGE_SIZE = 1000;
+  const documents: Record<string, GranolaDocument> = {};
+  let offset = 0;
+
+  while (true) {
+    const response = await fetch('https://api.granola.ai/v2/get-documents', {
+      method: 'POST',
+      headers: { ...GRANOLA_API_HEADERS, Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ limit: PAGE_SIZE, offset }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Granola get-documents API error: ${response.status}`);
+    }
+
+    const data = await response.json() as { docs?: unknown };
+    if (!Array.isArray(data.docs)) {
+      throw new Error('Granola get-documents: unexpected response shape');
+    }
+
+    for (const doc of data.docs as GranolaDocument[]) {
+      if (doc && typeof doc.id === 'string') {
+        documents[doc.id] = doc;
+      }
+    }
+
+    if (data.docs.length < PAGE_SIZE) break;
+    offset += PAGE_SIZE;
   }
 
-  // v3 stores cache as a JSON string, v6+ stores it as an object
-  const cache = typeof data.cache === 'string' ? JSON.parse(data.cache) : data.cache;
-
-  if (!cache || !cache.state || typeof cache.state.documents !== 'object') {
-    throw new Error('Invalid Granola cache file: missing documents in cache state');
-  }
-
-  return cache.state.documents;
+  return documents;
 }
 
 function loadSyncState(cwd: string): GranolaSyncState {
@@ -95,12 +133,7 @@ function saveSyncState(cwd: string, state: GranolaSyncState): void {
 async function fetchTranscript(accessToken: string, docId: string): Promise<string[] | null> {
   const response = await fetch('https://api.granola.ai/v1/get-document-transcript', {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-      'User-Agent': 'Granola/5.354.0',
-      'X-Client-Version': '5.354.0',
-    },
+    headers: { ...GRANOLA_API_HEADERS, Authorization: `Bearer ${accessToken}` },
     body: JSON.stringify({ document_id: docId }),
   });
 
@@ -185,10 +218,11 @@ export async function granolaSyncCommand(options: GranolaSyncOptions): Promise<v
 
     // Load Granola data
     logger.step('Loading Granola credentials...');
-    const accessToken = loadGranolaAuth();
+    const refreshToken = loadGranolaRefreshToken();
+    const accessToken = await refreshAccessToken(refreshToken);
 
     logger.step('Loading Granola documents...');
-    const documents = loadGranolaDocuments();
+    const documents = await fetchGranolaDocuments(accessToken);
     const docCount = Object.keys(documents).length;
     logger.info(`Found ${docCount} documents in Granola`);
 

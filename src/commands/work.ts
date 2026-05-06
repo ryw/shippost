@@ -13,6 +13,7 @@ import type { PostGenerationResult } from '../types/post.js';
 import type { StrategyCategory } from '../types/strategy.js';
 import { granolaSyncCommand } from './granola-sync.js';
 import { writeCover } from '../utils/svg-cover.js';
+import { generateConceptCoverSvg } from '../utils/concept-cover.js';
 
 interface WorkOptions {
   model?: string;
@@ -158,51 +159,152 @@ interface BlogGenerationResult {
   accent2?: string;
 }
 
-async function generateBlogDraft(
+interface PublishedPostRef {
+  slug: string;
+  title: string;
+}
+
+function extractFrontmatterTitle(content: string): string | null {
+  // Frontmatter is delimited by --- on its own lines.
+  const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!fmMatch) return null;
+  const fm = fmMatch[1];
+
+  // Title styles seen in the corpus:
+  //   title: 'Single quoted: with colon ok'
+  //   title: "Double quoted"
+  //   title: Plain unquoted title
+  const titleLine = fm.split('\n').find((l) => /^title\s*:/.test(l));
+  if (!titleLine) return null;
+  const raw = titleLine.replace(/^title\s*:\s*/, '').trim();
+  if ((raw.startsWith("'") && raw.endsWith("'")) || (raw.startsWith('"') && raw.endsWith('"'))) {
+    return raw.slice(1, -1).replace(/\\"/g, '"').replace(/''/g, "'");
+  }
+  return raw;
+}
+
+function loadPublishedPostIndex(postsDir: string): PublishedPostRef[] {
+  if (!existsSync(postsDir)) return [];
+  const refs: PublishedPostRef[] = [];
+  try {
+    for (const file of readdirSync(postsDir)) {
+      if (!file.endsWith('.mdx') && !file.endsWith('.md')) continue;
+      const slug = file.replace(/\.(mdx|md)$/, '');
+      try {
+        const content = readFileSync(join(postsDir, file), 'utf-8');
+        const title = extractFrontmatterTitle(content) || slug;
+        refs.push({ slug, title });
+      } catch {
+        // skip unreadable file
+      }
+    }
+  } catch {
+    // skip unreadable directory
+  }
+  refs.sort((a, b) => a.slug.localeCompare(b.slug));
+  return refs;
+}
+
+function bodyLinksToPublished(body: string, knownSlugs: Set<string>): boolean {
+  // Look for markdown links of the form [anchor](/some-slug). Posts route at root.
+  const linkPattern = /\]\(\/([a-z0-9][a-z0-9-]*)(?:[)#?])/g;
+  let match: RegExpExecArray | null;
+  while ((match = linkPattern.exec(body)) !== null) {
+    if (knownSlugs.has(match[1])) return true;
+  }
+  return false;
+}
+
+function normalizeBlogResult(e: any): BlogGenerationResult {
+  return {
+    title: e.title || 'Untitled Blog Draft',
+    slug: e.slug || createSlug(e.title || 'untitled'),
+    description: e.description || '',
+    tags: Array.isArray(e.tags) ? e.tags : ['ai'],
+    takeaways: Array.isArray(e.takeaways) ? e.takeaways : [],
+    faq: Array.isArray(e.faq) ? e.faq : [],
+    sources: Array.isArray(e.sources) ? e.sources : [],
+    body: (e.body || '').replace(/\\n/g, '\n'),
+    motif: typeof e.motif === 'string' ? e.motif : '',
+    accent: typeof e.accent === 'string' ? e.accent : undefined,
+    accent2: typeof e.accent2 === 'string' ? e.accent2 : undefined,
+  };
+}
+
+async function generateBlogDrafts(
   llm: any,
   transcript: string,
   systemPrompt: string,
-  styleGuide: string
-): Promise<BlogGenerationResult> {
+  styleGuide: string,
+  publishedPosts: PublishedPostRef[] = []
+): Promise<BlogGenerationResult[]> {
+  const publishedSection = publishedPosts.length > 0
+    ? `EXISTING PUBLISHED ESSAYS ON THIS BLOG (use these for cross-linking):
+${publishedPosts.map((p) => `- "${p.title}" — /${p.slug}`).join('\n')}
+
+CROSS-LINK RULE (HARD REQUIREMENT):
+Each essay's body MUST contain at least one inline markdown link to a relevant existing essay from the list above. Format: [anchor text](/slug). The blog is fully circular — every new essay points to at least one neighbor.
+- Choose an essay whose argument is genuinely related, not a random one.
+- Anchor text should read naturally inside the sentence, not "click here" or just the title.
+- Only link to slugs that appear in the list above. Do not invent slugs.
+- Two cross-links are fine when they fit; one is the floor.
+
+`
+    : '';
+
   const prompt = `${systemPrompt}
 
 STYLE GUIDE:
 ${styleGuide}
 
-INSTRUCTIONS:
-Generate ONE short, atomic blog post — a single focused argument, not a collection of essays.
+${publishedSection}INSTRUCTIONS:
+Identify the distinct atomic arguments in this transcript and generate ONE short blog post per argument. Generate between 1 and 3 posts.
+
+How many to generate:
+- Default to 1. Most transcripts contain one strong idea — write that single post and stop.
+- Generate 2 only if the transcript contains two clearly separable, non-overlapping arguments that each deserve their own atomic essay.
+- Generate 3 only if there are three genuinely distinct arguments. Do NOT pad — if the third argument is weak or overlaps the others, drop it.
+- Never split a single argument into multiple posts. Never produce variations of the same point.
+
+Each post must stand alone — readable without the others, no cross-references like "as I argued in another post".
 
 Target audience: executive leadership at startups and knowledge-work organizations
 Topics: AI agents as software, enterprise AI operationalization, agent mesh/fabric
 Voice: business visionary, grounded in building experience
 
-SHAPE OF THE POST (this is the most important constraint):
+SHAPE OF EACH POST (this is the most important constraint):
 - 250-450 words in the body. Hard cap at 500.
-- ONE argument, ONE claim. Pick the strongest point in the transcript and write JUST that.
+- ONE argument, ONE claim. Pick the strongest point and write JUST that.
 - 3-5 short paragraphs. NO ## section headers. The post is itself one section.
 - Open with the claim or a sharp hook. Close with a forward-looking line or a "what to do" pivot.
-- Cut everything that does not directly support the single argument. If you have a second strong idea, throw it away — it is its own future post.
+- Cut everything that does not directly support the single argument.
 
 Output ONLY valid JSON (no markdown fences, no commentary) with this exact structure:
 {
-  "title": "Post Title Here",
-  "slug": "short-slug-here",
-  "description": "One-sentence summary for SEO/social cards (80-200 chars). Required range — too short fails validation.",
-  "tags": ["ai", "software-engineering"],
-  "takeaways": ["Key insight 1", "Key insight 2", "Key insight 3"],
-  "faq": [
-    {"question": "...", "answer": "..."},
-    {"question": "...", "answer": "..."}
-  ],
-  "sources": [
-    {"id": "short-kebab-id", "title": "Source Title", "url": "https://..."},
-    {"id": "short-kebab-id", "title": "Source Title", "url": "https://..."}
-  ],
-  "motif": "one of: gap | blocks | flow | layers | mesh | harness | fragments | ascend | pipeline | horizon",
-  "body": "Full markdown body here (use \\n for newlines). 250-450 words, no ## headers, single argument."
+  "essays": [
+    {
+      "title": "Post Title Here",
+      "slug": "short-slug-here",
+      "description": "One-sentence summary for SEO/social cards (80-200 chars). Required range — too short fails validation.",
+      "tags": ["ai", "software-engineering"],
+      "takeaways": ["Key insight 1", "Key insight 2", "Key insight 3"],
+      "faq": [
+        {"question": "...", "answer": "..."},
+        {"question": "...", "answer": "..."}
+      ],
+      "sources": [
+        {"id": "short-kebab-id", "title": "Source Title", "url": "https://..."},
+        {"id": "short-kebab-id", "title": "Source Title", "url": "https://..."}
+      ],
+      "motif": "one of: gap | blocks | flow | layers | mesh | harness | fragments | ascend | pipeline | horizon",
+      "body": "Full markdown body here (use \\n for newlines). 250-450 words, no ## headers, single argument."
+    }
+  ]
 }
 
-Rules for the slug: 2-5 words, lowercase, hyphenated (e.g. "agents-are-software", "demo-vs-deployment").
+The "essays" array MUST contain 1, 2, or 3 entries. Never 0, never more than 3.
+
+Rules for slug: 2-5 words, lowercase, hyphenated (e.g. "agents-are-software", "demo-vs-deployment"). Each essay's slug must be different from the others.
 Rules for tags: pick 2-4 from [ai, software-engineering, tembo, startups, agents, enterprise].
 Rules for description: 80-200 characters. Strict — under 80 or over 200 fails site validation.
 Rules for takeaways: exactly 3, one sentence each. NEVER use a bare colon mid-string in a takeaway (it breaks YAML parsing). Use a dash or rephrase.
@@ -225,25 +327,27 @@ ${transcript}`;
 
   const response = await llm.generate(prompt);
 
-  // Parse JSON response
   try {
-    // Strip markdown fences if present
     const cleaned = response.replace(/^```json?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
     const parsed = JSON.parse(cleaned);
 
-    return {
-      title: parsed.title || 'Untitled Blog Draft',
-      slug: parsed.slug || createSlug(parsed.title || 'untitled'),
-      description: parsed.description || '',
-      tags: Array.isArray(parsed.tags) ? parsed.tags : ['ai'],
-      takeaways: Array.isArray(parsed.takeaways) ? parsed.takeaways : [],
-      faq: Array.isArray(parsed.faq) ? parsed.faq : [],
-      sources: Array.isArray(parsed.sources) ? parsed.sources : [],
-      body: (parsed.body || '').replace(/\\n/g, '\n'),
-      motif: typeof parsed.motif === 'string' ? parsed.motif : '',
-      accent: typeof parsed.accent === 'string' ? parsed.accent : undefined,
-      accent2: typeof parsed.accent2 === 'string' ? parsed.accent2 : undefined,
-    };
+    let essays: any[];
+    if (Array.isArray(parsed.essays)) {
+      essays = parsed.essays;
+    } else if (Array.isArray(parsed)) {
+      essays = parsed;
+    } else if (parsed.title || parsed.body) {
+      // Single-essay fallback shape (older prompt response)
+      essays = [parsed];
+    } else {
+      essays = [];
+    }
+
+    if (essays.length === 0) {
+      throw new Error('No essays in response');
+    }
+
+    return essays.slice(0, 3).map(normalizeBlogResult);
   } catch {
     // Fallback: try to extract title and body from markdown response
     const lines = response.trim().split('\n');
@@ -252,7 +356,7 @@ ${transcript}`;
     const bodyStart = titleIndex >= 0 ? titleIndex + 1 : 0;
     const body = lines.slice(bodyStart).join('\n').trim();
 
-    return {
+    return [{
       title,
       slug: createSlug(title),
       description: '',
@@ -262,7 +366,7 @@ ${transcript}`;
       sources: [],
       body,
       motif: '',
-    };
+    }];
   }
 }
 
@@ -284,13 +388,14 @@ function createSlug(title: string): string {
     .replace(/^-|-$/g, ''); // Trim hyphens from start/end
 }
 
-function saveBlogDraft(
+async function saveBlogDraft(
   outputDir: string,
   result: BlogGenerationResult,
   sourceFile: string,
   imageDir: string,
-  imagePathPrefix: string
-): string {
+  imagePathPrefix: string,
+  llm: any
+): Promise<string> {
   // Ensure output directory exists
   if (!existsSync(outputDir)) {
     mkdirSync(outputDir, { recursive: true });
@@ -301,15 +406,34 @@ function saveBlogDraft(
   const filename = `${slug}.mdx`;
   const filePath = join(outputDir, filename);
 
-  // Generate the SVG cover. Falls back to a deterministic motif/accent if the
-  // model didn't pick valid ones.
+  // Generate the SVG cover. Try the concept-tied LLM generator first so the
+  // image hints at the post's metaphor. Fall back to the deterministic
+  // geometric motif if the LLM call fails or returns malformed SVG.
   const imageFilePath = join(imageDir, `${slug}.svg`);
-  writeCover(imageFilePath, {
-    slug,
-    motif: result.motif,
-    accent: result.accent,
-    accent2: result.accent2,
-  });
+  if (!existsSync(imageDir)) {
+    mkdirSync(imageDir, { recursive: true });
+  }
+  let coverWritten = false;
+  try {
+    const conceptSvg = await generateConceptCoverSvg(llm, {
+      slug,
+      title: result.title,
+      description: result.description,
+      body: result.body,
+    });
+    writeFileSync(imageFilePath, conceptSvg, 'utf-8');
+    coverWritten = true;
+  } catch {
+    // fall through to geometric
+  }
+  if (!coverWritten) {
+    writeCover(imageFilePath, {
+      slug,
+      motif: result.motif,
+      accent: result.accent,
+      accent2: result.accent2,
+    });
+  }
   const imageWebPath = `${imagePathPrefix.replace(/\/$/, '')}/${slug}.svg`;
 
   // Build frontmatter matching published post format
@@ -352,25 +476,32 @@ ${result.body}`;
   return filePath;
 }
 
-function findBlogPosts(dirs: string[]): Array<{ name: string; path: string; mtime: Date }> {
-  const files: Array<{ name: string; path: string; mtime: Date }> = [];
+function findBlogPosts(
+  dirs: string[],
+  limitPerDir: number = 5
+): Array<{ name: string; path: string; mtime: Date }> {
+  // Take top N per directory rather than across the combined set, otherwise
+  // a directory with many recently-touched files (drafts) crowds out files
+  // from other directories (published posts) entirely.
+  const result: Array<{ name: string; path: string; mtime: Date }> = [];
 
   for (const dir of dirs) {
     if (!existsSync(dir)) continue;
     try {
+      const dirFiles: Array<{ name: string; path: string; mtime: Date }> = [];
       for (const file of readdirSync(dir)) {
         if (!file.endsWith('.md') && !file.endsWith('.mdx')) continue;
         const filePath = join(dir, file);
-        files.push({ name: file, path: filePath, mtime: statSync(filePath).mtime });
+        dirFiles.push({ name: file, path: filePath, mtime: statSync(filePath).mtime });
       }
+      dirFiles.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
+      result.push(...dirFiles.slice(0, limitPerDir));
     } catch {
       // skip unreadable dirs
     }
   }
 
-  return files
-    .sort((a, b) => b.mtime.getTime() - a.mtime.getTime())
-    .slice(0, 5);
+  return result;
 }
 
 async function updateRelatedBlogPosts(
@@ -886,22 +1017,58 @@ export async function workCommand(options: WorkOptions): Promise<void> {
 
       // Platform counts are tracked during generation
 
-      // Generate blog draft
-      logger.info('  Generating blog draft...');
-      const blogResult = await generateBlogDraft(llm, transcript, systemPrompt, styleGuide);
-      const blogPath = saveBlogDraft(
-        config.blog?.outputDir || 'src/content/drafts',
-        blogResult,
-        relativePath,
-        config.blog?.imageDir || 'public/images/posts',
-        config.blog?.imagePathPrefix || '/images/posts'
-      );
-      logger.success(`  Blog draft: ${relative(cwd, blogPath)}`);
+      const draftsDir = config.blog?.outputDir || 'src/content/drafts';
+      const postsDir = join(draftsDir, '..', 'posts');
+
+      // Load published post index so the LLM can cross-link new essays
+      const publishedIndex = loadPublishedPostIndex(postsDir);
+      if (options.verbose) {
+        logger.info(`  Loaded ${publishedIndex.length} published essays for cross-linking`);
+      }
+      const publishedSlugSet = new Set(publishedIndex.map((p) => p.slug));
+
+      // Generate blog drafts (1-3 atomic essays per transcript)
+      logger.info('  Generating blog drafts...');
+      const blogResults = await generateBlogDrafts(llm, transcript, systemPrompt, styleGuide, publishedIndex);
+      logger.info(`  LLM identified ${blogResults.length} atomic essay${blogResults.length === 1 ? '' : 's'}`);
+
+      // Validate each essay cross-links to at least one published essay
+      if (publishedIndex.length > 0) {
+        for (let i = 0; i < blogResults.length; i++) {
+          if (!bodyLinksToPublished(blogResults[i].body, publishedSlugSet)) {
+            logger.info(`  ⚠ Essay ${i + 1} ("${blogResults[i].title}") has no link to a published essay`);
+          }
+        }
+      }
+
+      // Disambiguate within-run slug collisions so two essays from the same
+      // transcript don't overwrite each other.
+      const usedSlugs = new Set<string>();
+      const blogDraftCount = blogResults.length;
+      for (const result of blogResults) {
+        const baseSlug = result.slug || createSlug(result.title);
+        let slug = baseSlug;
+        let n = 2;
+        while (usedSlugs.has(slug)) {
+          slug = `${baseSlug}-${n}`;
+          n++;
+        }
+        usedSlugs.add(slug);
+        result.slug = slug;
+
+        const blogPath = await saveBlogDraft(
+          draftsDir,
+          result,
+          relativePath,
+          config.blog?.imageDir || 'public/images/posts',
+          config.blog?.imagePathPrefix || '/images/posts',
+          llm
+        );
+        logger.success(`  Blog draft: ${relative(cwd, blogPath)}`);
+      }
 
       // Update related existing blog posts (drafts + published)
       logger.info('  Checking existing blog posts...');
-      const draftsDir = config.blog?.outputDir || 'src/content/drafts';
-      const postsDir = join(draftsDir, '..', 'posts');
       const updates = await updateRelatedBlogPosts(llm, transcript, [draftsDir, postsDir]);
       const updatedCount = updates.filter(u => u.updated).length;
       if (updatedCount > 0) {
@@ -912,7 +1079,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
       const summaryParts = [];
       if (xPostsGenerated > 0) summaryParts.push(`${xPostsGenerated} X post${xPostsGenerated === 1 ? '' : 's'}`);
       if (linkedinPostsGenerated > 0) summaryParts.push(`${linkedinPostsGenerated} LinkedIn post${linkedinPostsGenerated === 1 ? '' : 's'}`);
-      summaryParts.push('1 new blog draft');
+      summaryParts.push(`${blogDraftCount} new blog draft${blogDraftCount === 1 ? '' : 's'}`);
       if (updatedCount > 0) summaryParts.push(`${updatedCount} existing post${updatedCount === 1 ? '' : 's'} updated`);
 
       logger.info(`  Summary: ${summaryParts.join(', ')}`);
