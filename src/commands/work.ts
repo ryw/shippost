@@ -11,6 +11,7 @@ import { NotInitializedError } from '../utils/errors.js';
 import { buildBangerEvalPrompt, parseBangerEval } from '../utils/banger-eval.js';
 import type { PostGenerationResult } from '../types/post.js';
 import type { StrategyCategory } from '../types/strategy.js';
+import type { LLMService } from '../services/llm-service.js';
 import { granolaSyncCommand } from './granola-sync.js';
 import { writeCover } from '../utils/svg-cover.js';
 import { generateConceptCoverSvg } from '../utils/concept-cover.js';
@@ -215,16 +216,21 @@ function bodyLinksToPublished(body: string, knownSlugs: Set<string>): boolean {
   return false;
 }
 
-function normalizeBlogResult(e: any): BlogGenerationResult {
+function normalizeBlogResult(e: Record<string, unknown>): BlogGenerationResult {
+  const title = typeof e.title === 'string' ? e.title : 'Untitled Blog Draft';
+  const slug = typeof e.slug === 'string' ? e.slug : createSlug(title);
+  const description = typeof e.description === 'string' ? e.description : '';
+  const body = typeof e.body === 'string' ? e.body.replace(/\\n/g, '\n') : '';
+
   return {
-    title: e.title || 'Untitled Blog Draft',
-    slug: e.slug || createSlug(e.title || 'untitled'),
-    description: e.description || '',
-    tags: Array.isArray(e.tags) ? e.tags : ['ai'],
-    takeaways: Array.isArray(e.takeaways) ? e.takeaways : [],
-    faq: Array.isArray(e.faq) ? e.faq : [],
-    sources: Array.isArray(e.sources) ? e.sources : [],
-    body: (e.body || '').replace(/\\n/g, '\n'),
+    title,
+    slug,
+    description,
+    tags: Array.isArray(e.tags) ? (e.tags as string[]) : ['ai'],
+    takeaways: Array.isArray(e.takeaways) ? (e.takeaways as string[]) : [],
+    faq: Array.isArray(e.faq) ? (e.faq as Array<{ question: string; answer: string }>) : [],
+    sources: Array.isArray(e.sources) ? (e.sources as Array<{ id: string; title: string; url: string }>) : [],
+    body,
     motif: typeof e.motif === 'string' ? e.motif : '',
     accent: typeof e.accent === 'string' ? e.accent : undefined,
     accent2: typeof e.accent2 === 'string' ? e.accent2 : undefined,
@@ -232,7 +238,7 @@ function normalizeBlogResult(e: any): BlogGenerationResult {
 }
 
 async function generateBlogDrafts(
-  llm: any,
+  llm: LLMService,
   transcript: string,
   systemPrompt: string,
   styleGuide: string,
@@ -331,7 +337,7 @@ ${transcript}`;
     const cleaned = response.replace(/^```json?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
     const parsed = JSON.parse(cleaned);
 
-    let essays: any[];
+    let essays: Record<string, unknown>[];
     if (Array.isArray(parsed.essays)) {
       essays = parsed.essays;
     } else if (Array.isArray(parsed)) {
@@ -394,7 +400,7 @@ async function saveBlogDraft(
   sourceFile: string,
   imageDir: string,
   imagePathPrefix: string,
-  llm: any
+  llm: LLMService
 ): Promise<string> {
   // Ensure output directory exists
   if (!existsSync(outputDir)) {
@@ -505,7 +511,7 @@ function findBlogPosts(
 }
 
 async function updateRelatedBlogPosts(
-  llm: any,
+  llm: LLMService,
   transcript: string,
   contentDirs: string[]
 ): Promise<Array<{ path: string; updated: boolean }>> {
