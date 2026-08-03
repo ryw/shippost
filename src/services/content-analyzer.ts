@@ -1,5 +1,6 @@
 import type { TranscriptAnalysis } from '../types/strategy.js';
 import type { LLMService } from './llm-service.js';
+import { isRecord, parseJsonFromResponse } from '../utils/json-parser.js';
 
 export class ContentAnalyzer {
   constructor(
@@ -38,33 +39,7 @@ Provide your analysis as JSON:`;
   }
 
   private parseAnalysis(response: string): TranscriptAnalysis | null {
-    try {
-      // Try to extract JSON from the response
-      const jsonMatch = response.match(/\{[\s\S]*?\}/);
-      if (!jsonMatch) {
-        return null;
-      }
-
-      const parsed = JSON.parse(jsonMatch[0]);
-
-      // Validate required fields
-      if (
-        !Array.isArray(parsed.contentTypes) ||
-        typeof parsed.hasPersonalStories !== 'boolean' ||
-        typeof parsed.hasActionableAdvice !== 'boolean' ||
-        typeof parsed.hasResourceMentions !== 'boolean' ||
-        typeof parsed.hasProjectContext !== 'boolean' ||
-        typeof parsed.hasStrongOpinions !== 'boolean' ||
-        !parsed.length ||
-        typeof parsed.characterCount !== 'number'
-      ) {
-        return null;
-      }
-
-      return parsed as TranscriptAnalysis;
-    } catch (error) {
-      return null;
-    }
+    return parseJsonFromResponse(response, isTranscriptAnalysis, 'object');
   }
 
   private getDefaultAnalysis(transcript: string): TranscriptAnalysis {
@@ -90,4 +65,19 @@ Provide your analysis as JSON:`;
       characterCount: charCount,
     };
   }
+}
+
+function isTranscriptAnalysis(value: unknown): value is TranscriptAnalysis {
+  if (!isRecord(value)) return false;
+  return (
+    Array.isArray(value.contentTypes) &&
+    value.contentTypes.every((item) => typeof item === 'string') &&
+    typeof value.hasPersonalStories === 'boolean' &&
+    typeof value.hasActionableAdvice === 'boolean' &&
+    typeof value.hasResourceMentions === 'boolean' &&
+    typeof value.hasProjectContext === 'boolean' &&
+    typeof value.hasStrongOpinions === 'boolean' &&
+    (value.length === 'short' || value.length === 'medium' || value.length === 'long') &&
+    typeof value.characterCount === 'number'
+  );
 }
