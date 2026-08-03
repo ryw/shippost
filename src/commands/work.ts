@@ -14,6 +14,7 @@ import type { StrategyCategory } from '../types/strategy.js';
 import { granolaSyncCommand } from './granola-sync.js';
 import { writeCover } from '../utils/svg-cover.js';
 import { generateConceptCoverSvg } from '../utils/concept-cover.js';
+import type { LLMService } from '../services/llm-service.js';
 
 interface WorkOptions {
   model?: string;
@@ -253,7 +254,7 @@ function normalizeBlogResult(e: any): BlogGenerationResult {
 }
 
 async function generateBlogDrafts(
-  llm: any,
+  llm: LLMService,
   transcript: string,
   systemPrompt: string,
   styleGuide: string,
@@ -420,7 +421,7 @@ async function saveBlogDraft(
   sourceFile: string,
   imageDir: string,
   imagePathPrefix: string,
-  llm: any
+  llm: LLMService
 ): Promise<string> {
   // Ensure output directory exists
   if (!existsSync(outputDir)) {
@@ -531,7 +532,7 @@ function findBlogPosts(
 }
 
 async function updateRelatedBlogPosts(
-  llm: any,
+  llm: LLMService,
   transcript: string,
   contentDirs: string[]
 ): Promise<Array<{ path: string; updated: boolean }>> {
