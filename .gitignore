@@ -24,10 +24,13 @@ Thumbs.db
 
 # OAuth tokens (sensitive)
 .t2p-tokens.json
+.shippost-tokens.json
 
 # State tracking (local)
 .t2p-state.json
 .granola-sync-state.json
+.ship-*.json
+.shippost-*.json
 .posts.lock
 
 # Testing
