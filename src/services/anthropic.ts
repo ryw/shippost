@@ -81,7 +81,10 @@ export class AnthropicService implements LLMService {
       const response = await this.client.messages.create({
         model: this.getModelName(),
         max_tokens: this.config.anthropic?.maxTokens || 4096,
-        temperature: this.config.generation.temperature || 0.7,
+        // Fable 5 and Opus 4.7+ reject sampling params (400)
+        ...(this.supportsTemperature()
+          ? { temperature: this.config.generation.temperature || 0.7 }
+          : {}),
         messages: [
           {
             role: 'user',
@@ -111,5 +114,10 @@ export class AnthropicService implements LLMService {
 
   getTemperature(): number {
     return this.config.generation.temperature || 0.7;
+  }
+
+  supportsTemperature(): boolean {
+    const model = this.getModelName();
+    return !/^claude-(fable|mythos)-|^claude-opus-4-[7-9]/.test(model);
   }
 }

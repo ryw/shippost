@@ -11,8 +11,26 @@ import { formatFollowerCount } from '../utils/format.js';
 
 const FOLLOWING_CACHE_FILE = '.shippost-following-cache.json';
 const FOLLOWING_CACHE_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 days
+const WHITELIST_FILE = '.shippost-unfollow-whitelist.json';
 
-interface FollowingAccount {
+/** Accounts never suggested for unfollow, id → username (username is for human readability of the file). */
+export function loadWhitelist(cwd: string): Record<string, string> {
+  const file = join(cwd, WHITELIST_FILE);
+  if (!existsSync(file)) return {};
+  try {
+    return JSON.parse(readFileSync(file, 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+export function addToWhitelist(cwd: string, entries: { id: string; username: string }[]): void {
+  const list = loadWhitelist(cwd);
+  for (const e of entries) list[e.id] = e.username;
+  writeFileSync(join(cwd, WHITELIST_FILE), JSON.stringify(list, null, 2));
+}
+
+export interface FollowingAccount {
   id: string;
   username: string;
   name: string;
@@ -20,9 +38,10 @@ interface FollowingAccount {
   followingCount: number;
   tweetCount: number;
   followsBack: boolean;
+  bio?: string;
 }
 
-function loadFollowingCache(cwd: string): FollowingAccount[] | null {
+export function loadFollowingCache(cwd: string): FollowingAccount[] | null {
   const cacheFile = join(cwd, FOLLOWING_CACHE_FILE);
   if (!existsSync(cacheFile)) return null;
   try {
@@ -36,12 +55,12 @@ function loadFollowingCache(cwd: string): FollowingAccount[] | null {
   }
 }
 
-function saveFollowingCache(cwd: string, accounts: FollowingAccount[]): void {
+export function saveFollowingCache(cwd: string, accounts: FollowingAccount[]): void {
   const cacheFile = join(cwd, FOLLOWING_CACHE_FILE);
   writeFileSync(cacheFile, JSON.stringify({ timestamp: Date.now(), accounts }, null, 2));
 }
 
-function removeFromCache(cwd: string, userId: string): void {
+export function removeFromCache(cwd: string, userId: string): void {
   const accounts = loadFollowingCache(cwd);
   if (!accounts) return;
   const filtered = accounts.filter((a) => a.id !== userId);
@@ -57,7 +76,7 @@ interface UnfollowOptions {
   yes?: boolean;
 }
 
-interface UnfollowCandidate {
+export interface UnfollowCandidate {
   id: string;
   username: string;
   name: string;
@@ -68,7 +87,7 @@ interface UnfollowCandidate {
   reason: string;
 }
 
-function buildCandidates(
+export function buildCandidates(
   following: Array<{ id: string; username: string; name: string; followersCount: number; followingCount: number; tweetCount: number; followsBack: boolean }>,
   options: UnfollowOptions
 ): UnfollowCandidate[] {
@@ -91,11 +110,20 @@ function buildCandidates(
       ? (account.tweetCount / account.followersCount) * 1000
       : account.tweetCount > 0 ? 9999 : 0;
 
+    // Spammy = posts tons AND nobody follows. High volume with a real
+    // audience is just a prolific poster, not spam.
+    const isSpammy = tweetsPerKFollowers > 1000 && account.followersCount < 2000;
+    // Follow farmer: follows thousands, almost nobody follows back
+    const isFarmer =
+      account.followingCount > 2000 &&
+      account.followingCount > 5 * Math.max(account.followersCount, 1);
+
     const isLowQuality =
       account.tweetCount < 10 ||                           // inactive
       account.followersCount < minFollowers ||              // low reach
       tweetsPerKFollowers < 1 ||                            // dead account (has followers but doesn't post)
-      tweetsPerKFollowers > 1000;                           // spammy (posts tons, nobody follows)
+      isSpammy ||
+      isFarmer;
 
     if (options.inactive) {
       if (account.tweetCount < 10) {
@@ -105,8 +133,11 @@ function buildCandidates(
       // Add quality context to reason
       if (tweetsPerKFollowers < 1 && account.followersCount >= minFollowers) {
         reasons.push('dead account');
-      } else if (tweetsPerKFollowers > 1000) {
+      } else if (isSpammy) {
         reasons.push('spammy ratio');
+      }
+      if (isFarmer) {
+        reasons.push('follow farmer');
       }
       candidates.push({ ...account, reason: reasons.join(', ') || 'low quality' });
     }
@@ -198,7 +229,8 @@ export async function unfollowCommand(options: UnfollowOptions): Promise<void> {
         break;
       }
 
-      const candidates = buildCandidates(following, options);
+      const whitelist = loadWhitelist(cwd);
+      const candidates = buildCandidates(following, options).filter((c) => !whitelist[c.id]);
 
       // How many to unfollow this round
       let batchSize = options.batch || 50;

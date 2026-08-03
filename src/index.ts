@@ -12,6 +12,7 @@ import { initCommand } from './commands/init.js';
 import { workCommand } from './commands/work.js';
 import { postsCommand } from './commands/posts.js';
 import { reviewCommand } from './commands/review.js';
+import { uiCommand } from './commands/ui/index.js';
 import { analyzeXCommand } from './commands/analyze-x.js';
 import { replyCommand } from './commands/reply.js';
 import { xStatusCommand } from './commands/x-status.js';
@@ -53,6 +54,7 @@ program
   .option('--category <category>', 'Filter strategies by category (with --list-strategies)')
   .option('--no-strategies', 'Disable strategy-based generation (use legacy mode)')
   .option('-a, --all', 'Process all transcripts without prompting')
+  .option('--files <names>', 'Only process these input files (comma-separated basenames)')
   .action(workCommand);
 
 program
@@ -69,7 +71,16 @@ program
   .command('review')
   .description('Review posts one-by-one and mark as keep/reject')
   .option('--min-score <score>', 'Only review posts with score >= N', parseInt)
-  .action(reviewCommand);
+  .option('--web', 'Review in the local web UI instead of the terminal')
+  .option('--port <port>', 'Port for --web (default: 4747)', parseInt)
+  .action((opts) => (opts.web ? uiCommand(opts) : reviewCommand(opts)));
+
+program
+  .command('ui')
+  .description('Local web UI: review, generate, reply, stats, unfollow')
+  .option('--port <port>', 'Port (default: 4747)', parseInt)
+  .option('--min-score <score>', 'Only show review posts with score >= N', parseInt)
+  .action(uiCommand);
 
 program
   .command('analyze-x')

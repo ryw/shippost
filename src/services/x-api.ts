@@ -90,6 +90,23 @@ export class XApiService {
   /**
    * Look up a user by username
    */
+  /** Bulk user lookup with bios and metrics — 100 ids per API call. */
+  async getUsersByIds(ids: string[]): Promise<UserV2[]> {
+    const out: UserV2[] = [];
+    for (let i = 0; i < ids.length; i += 100) {
+      const batch = ids.slice(i, i + 100);
+      try {
+        const { data } = await this.client.v2.users(batch, {
+          'user.fields': ['description', 'public_metrics'],
+        });
+        if (Array.isArray(data)) out.push(...data);
+      } catch (error) {
+        handleApiError(error as TwitterApiError, 'Failed to look up users');
+      }
+    }
+    return out;
+  }
+
   async getUserByUsername(username: string): Promise<UserV2> {
     try {
       const { data } = await this.client.v2.userByUsername(username);
@@ -574,6 +591,7 @@ export class XApiService {
     tweetCount: number;
     followsBack: boolean;
     lastTweetAt?: string;
+    bio?: string;
   }>> {
     const me = await this.getMe();
     const results: Array<{
@@ -585,6 +603,7 @@ export class XApiService {
       tweetCount: number;
       followsBack: boolean;
       lastTweetAt?: string;
+      bio?: string;
     }> = [];
 
     try {
@@ -593,7 +612,7 @@ export class XApiService {
       do {
         const response = await this.client.v2.following(me.id, {
           max_results: 100,
-          'user.fields': ['public_metrics', 'created_at'],
+          'user.fields': ['public_metrics', 'created_at', 'description'],
           ...(nextToken ? { pagination_token: nextToken } : {}),
         });
 
@@ -610,6 +629,7 @@ export class XApiService {
             followingCount: metrics?.following_count || 0,
             tweetCount: metrics?.tweet_count || 0,
             followsBack: followerIds ? followerIds.has(user.id) : false,
+            bio: user.description || '',
           });
 
           if (results.length >= maxResults) return results;

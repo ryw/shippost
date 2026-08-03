@@ -15,12 +15,35 @@ import { openInEditor, getEditorDisplayName } from '../utils/editor.js';
 
 const SKIP_CACHE_FILE = '.shippost-skipped-tweets.json';
 const SKIP_CACHE_MAX_AGE = 24 * 60 * 60 * 1000; // 24 hours
+const FEED_SEEN_FILE = '.shippost-feed-seen.json';
+
+/** Accounts observed in Ry's home timeline, authorId → last-seen ISO date.
+ *  Accumulates across reply scans; used by unfollow to protect accounts
+ *  that actually appear in the feed. */
+export function loadFeedSeen(cwd: string): Record<string, string> {
+  const file = join(cwd, FEED_SEEN_FILE);
+  if (!existsSync(file)) return {};
+  try {
+    return JSON.parse(readFileSync(file, 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+function recordFeedSeen(cwd: string, tweets: Tweet[]): void {
+  const seen = loadFeedSeen(cwd);
+  const now = new Date().toISOString();
+  for (const t of tweets) {
+    if (t.authorId) seen[t.authorId] = now;
+  }
+  writeFileSync(join(cwd, FEED_SEEN_FILE), JSON.stringify(seen, null, 2));
+}
 
 interface SkipCache {
   [tweetId: string]: number; // timestamp when skipped
 }
 
-function loadSkipCache(cwd: string): SkipCache {
+export function loadSkipCache(cwd: string): SkipCache {
   const cacheFile = join(cwd, SKIP_CACHE_FILE);
   if (!existsSync(cacheFile)) return {};
   try {
@@ -44,7 +67,7 @@ function saveSkipCache(cwd: string, cache: SkipCache): void {
   writeFileSync(cacheFile, JSON.stringify(cache, null, 2));
 }
 
-function addToSkipCache(cwd: string, tweetId: string): void {
+export function addToSkipCache(cwd: string, tweetId: string): void {
   const cache = loadSkipCache(cwd);
   cache[tweetId] = Date.now();
   saveSkipCache(cwd, cache);
@@ -54,7 +77,7 @@ interface ReplyOptions {
   count?: number;
 }
 
-interface ReplyOpportunity {
+export interface ReplyOpportunity {
   tweet: Tweet;
   suggestedReply: string;
   reasoning: string;
@@ -220,7 +243,7 @@ function editReply(currentReply: string): string {
   }
 }
 
-function buildReplyPrompt(
+export function buildReplyPrompt(
   replyTemplate: string,
   styleGuide: string,
   tweets: Tweet[],
@@ -241,7 +264,7 @@ function buildReplyPrompt(
     .replace('{{TARGET_COUNT}}', targetCount);
 }
 
-function parseReplyOpportunities(
+export function parseReplyOpportunities(
   response: string,
   tweets: Tweet[]
 ): ReplyOpportunity[] {
@@ -278,6 +301,128 @@ function parseReplyOpportunities(
     logger.error(`Failed to parse LLM response: ${(error as Error).message}`);
     return [];
   }
+}
+
+/** Fetch timeline and apply all reply-candidate filters. Shared by CLI and `ship ui`. */
+export async function gatherReplyTweets(
+  apiService: XApiService,
+  username: string,
+  cwd: string,
+  maxTweets: number,
+  includeMetrics: boolean
+): Promise<Tweet[]> {
+  const { style } = logger;
+
+  let tweets = await apiService.getHomeTimeline(maxTweets, includeMetrics);
+
+  // Record every author we see — feeds the unfollow "appears in your feed" signal
+  recordFeedSeen(cwd, tweets);
+
+  // Filter out user's own tweets
+  tweets = tweets.filter((t) => t.authorUsername?.toLowerCase() !== username.toLowerCase());
+
+  // Filter out tweets we've already replied to
+  const alreadyRepliedTo = await apiService.getMyRecentReplyTargets(100);
+  if (alreadyRepliedTo.size > 0) {
+    const beforeReplyFilter = tweets.length;
+    tweets = tweets.filter((t) => !alreadyRepliedTo.has(t.id));
+    if (beforeReplyFilter > tweets.length) {
+      logger.info(style.dim(`Filtered ${beforeReplyFilter - tweets.length} tweets you already replied to`));
+    }
+  }
+
+  // Filter out previously skipped tweets (within 24 hours)
+  const skipCache = loadSkipCache(cwd);
+  const skippedIds = new Set(Object.keys(skipCache));
+  const beforeSkipFilter = tweets.length;
+  tweets = tweets.filter((t) => !skippedIds.has(t.id));
+  if (beforeSkipFilter > tweets.length) {
+    logger.info(style.dim(`Filtered ${beforeSkipFilter - tweets.length} previously skipped tweets`));
+  }
+
+  // For Basic tier: filter by engagement rate instead of raw follower count
+  if (includeMetrics) {
+    const beforeEngagementFilter = tweets.length;
+    tweets = tweets.filter((t) => {
+      const engagementRate = ((t.likeCount || 0) + (t.replyCount || 0) + (t.retweetCount || 0)) / Math.max(t.authorFollowersCount || 1, 1);
+      const isBigAccount = (t.authorFollowersCount || 0) >= 50000;
+      const isHighEngagement = engagementRate >= 0.01; // 1% engagement rate
+      return isBigAccount || isHighEngagement;
+    });
+    if (beforeEngagementFilter > tweets.length) {
+      logger.info(style.dim(`Filtered ${beforeEngagementFilter - tweets.length} tweets with low engagement rate`));
+    }
+  }
+
+  if (tweets.length === 0) return tweets;
+
+  // For Basic tier: Add replies from high-engagement threads as additional opportunities
+  if (includeMetrics) {
+    const HIGH_REPLY_THRESHOLD = 10;
+    const bigThreadTweets = tweets.filter((t) => (t.replyCount || 0) >= HIGH_REPLY_THRESHOLD);
+
+    if (bigThreadTweets.length > 0) {
+      logger.info(`Found ${bigThreadTweets.length} tweets with high reply counts, fetching conversation replies...`);
+
+      // Limit to top 3 most-engaged conversations to avoid rate limit issues
+      const topConversations = bigThreadTweets
+        .sort((a, b) => (b.replyCount || 0) - (a.replyCount || 0))
+        .slice(0, 3);
+
+      const repliesFromThreads: Tweet[] = [];
+      for (const parentTweet of topConversations) {
+        try {
+          const conversationReplies = await apiService.getRepliesFromOthers(parentTweet.id, 5);
+          // Add parentTweet reference to these replies for display context
+          for (const reply of conversationReplies) {
+            (reply as any).parentTweetForContext = parentTweet;
+          }
+          repliesFromThreads.push(...conversationReplies);
+        } catch {
+          // Silently continue if we can't fetch replies
+        }
+      }
+
+      if (repliesFromThreads.length > 0) {
+        logger.info(style.dim(`Added ${repliesFromThreads.length} replies from big threads as additional candidates`));
+        tweets.push(...repliesFromThreads);
+      }
+    }
+  }
+
+  // For Basic tier: sort by recency first, engagement second
+  if (includeMetrics) {
+    tweets = tweets.sort((a, b) => {
+      // Calculate tweet age in minutes
+      const ageA = (Date.now() - new Date(a.createdAt).getTime()) / (1000 * 60);
+      const ageB = (Date.now() - new Date(b.createdAt).getTime()) / (1000 * 60);
+
+      // Primary: tweets less than 60 minutes old sort above older tweets
+      const isRecentA = ageA < 60;
+      const isRecentB = ageB < 60;
+
+      if (isRecentA && !isRecentB) return -1;
+      if (isRecentB && !isRecentA) return 1;
+
+      // Secondary: within same recency tier, sort by engagement rate
+      if (isRecentA === isRecentB) {
+        const engagementA = ((a.likeCount || 0) + (a.replyCount || 0) + (a.retweetCount || 0)) / Math.max(a.authorFollowersCount || 1, 1);
+        const engagementB = ((b.likeCount || 0) + (b.replyCount || 0) + (b.retweetCount || 0)) / Math.max(b.authorFollowersCount || 1, 1);
+
+        if (engagementA !== engagementB) {
+          return engagementB - engagementA; // Higher engagement first
+        }
+      }
+
+      // Tertiary: by recency (newer first)
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+    logger.success(`Fetched ${tweets.length} tweets (sorted by recency & engagement)`);
+  } else {
+    logger.success(`Fetched ${tweets.length} tweets`);
+  }
+
+  return tweets;
 }
 
 export async function replyCommand(options: ReplyOptions): Promise<void> {
@@ -397,113 +542,11 @@ export async function replyCommand(options: ReplyOptions): Promise<void> {
       logger.info(`Fetching ${maxTweets} tweets from your timeline...`);
     }
 
-    let tweets = await apiService.getHomeTimeline(maxTweets, includeMetrics);
-
-    // Filter out user's own tweets
-    tweets = tweets.filter((t) => t.authorUsername?.toLowerCase() !== user.username.toLowerCase());
-
-    // Filter out tweets we've already replied to
-    const alreadyRepliedTo = await apiService.getMyRecentReplyTargets(100);
-    if (alreadyRepliedTo.size > 0) {
-      const beforeReplyFilter = tweets.length;
-      tweets = tweets.filter((t) => !alreadyRepliedTo.has(t.id));
-      if (beforeReplyFilter > tweets.length) {
-        logger.info(style.dim(`Filtered ${beforeReplyFilter - tweets.length} tweets you already replied to`));
-      }
-    }
-
-    // Filter out previously skipped tweets (within 24 hours)
-    const skipCache = loadSkipCache(cwd);
-    const skippedIds = new Set(Object.keys(skipCache));
-    const beforeSkipFilter = tweets.length;
-    tweets = tweets.filter((t) => !skippedIds.has(t.id));
-    if (beforeSkipFilter > tweets.length) {
-      logger.info(style.dim(`Filtered ${beforeSkipFilter - tweets.length} previously skipped tweets`));
-    }
-
-    // For Basic tier: filter by engagement rate instead of raw follower count
-    if (includeMetrics) {
-      const beforeEngagementFilter = tweets.length;
-      tweets = tweets.filter((t) => {
-        const engagementRate = ((t.likeCount || 0) + (t.replyCount || 0) + (t.retweetCount || 0)) / Math.max(t.authorFollowersCount || 1, 1);
-        const isBigAccount = (t.authorFollowersCount || 0) >= 50000;
-        const isHighEngagement = engagementRate >= 0.01; // 1% engagement rate
-        return isBigAccount || isHighEngagement;
-      });
-      if (beforeEngagementFilter > tweets.length) {
-        logger.info(style.dim(`Filtered ${beforeEngagementFilter - tweets.length} tweets with low engagement rate`));
-      }
-    }
+    const tweets = await gatherReplyTweets(apiService, user.username, cwd, maxTweets, includeMetrics);
 
     if (tweets.length === 0) {
       logger.error('No tweets found in timeline');
       process.exit(1);
-    }
-
-    // For Basic tier: Add replies from high-engagement threads as additional opportunities
-    if (includeMetrics) {
-      const HIGH_REPLY_THRESHOLD = 10;
-      const bigThreadTweets = tweets.filter((t) => (t.replyCount || 0) >= HIGH_REPLY_THRESHOLD);
-
-      if (bigThreadTweets.length > 0) {
-        logger.info(`Found ${bigThreadTweets.length} tweets with high reply counts, fetching conversation replies...`);
-
-        // Limit to top 3 most-engaged conversations to avoid rate limit issues
-        const topConversations = bigThreadTweets
-          .sort((a, b) => (b.replyCount || 0) - (a.replyCount || 0))
-          .slice(0, 3);
-
-        const repliesFromThreads: Tweet[] = [];
-        for (const parentTweet of topConversations) {
-          try {
-            const conversationReplies = await apiService.getRepliesFromOthers(parentTweet.id, 5);
-            // Add parentTweet reference to these replies for display context
-            for (const reply of conversationReplies) {
-              (reply as any).parentTweetForContext = parentTweet;
-            }
-            repliesFromThreads.push(...conversationReplies);
-          } catch {
-            // Silently continue if we can't fetch replies
-          }
-        }
-
-        if (repliesFromThreads.length > 0) {
-          logger.info(style.dim(`Added ${repliesFromThreads.length} replies from big threads as additional candidates`));
-          tweets.push(...repliesFromThreads);
-        }
-      }
-    }
-
-    // For Basic tier: sort by recency first, engagement second
-    if (includeMetrics) {
-      tweets = tweets.sort((a, b) => {
-        // Calculate tweet age in minutes
-        const ageA = (Date.now() - new Date(a.createdAt).getTime()) / (1000 * 60);
-        const ageB = (Date.now() - new Date(b.createdAt).getTime()) / (1000 * 60);
-
-        // Primary: tweets less than 60 minutes old sort above older tweets
-        const isRecentA = ageA < 60;
-        const isRecentB = ageB < 60;
-
-        if (isRecentA && !isRecentB) return -1;
-        if (isRecentB && !isRecentA) return 1;
-
-        // Secondary: within same recency tier, sort by engagement rate
-        if (isRecentA === isRecentB) {
-          const engagementA = ((a.likeCount || 0) + (a.replyCount || 0) + (a.retweetCount || 0)) / Math.max(a.authorFollowersCount || 1, 1);
-          const engagementB = ((b.likeCount || 0) + (b.replyCount || 0) + (b.retweetCount || 0)) / Math.max(b.authorFollowersCount || 1, 1);
-
-          if (engagementA !== engagementB) {
-            return engagementB - engagementA; // Higher engagement first
-          }
-        }
-
-        // Tertiary: by recency (newer first)
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-      });
-      logger.success(`Fetched ${tweets.length} tweets (sorted by recency & engagement)`);
-    } else {
-      logger.success(`Fetched ${tweets.length} tweets`);
     }
 
     // Load prompts

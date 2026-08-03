@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync, statSync, existsSync, mkdirSync, writeFileSync } from 'fs';
-import { join, relative } from 'path';
+import { join, relative, basename } from 'path';
 import { FileSystemService } from '../services/file-system.js';
 import { createLLMService } from '../services/llm-factory.js';
 import { ContentAnalyzer } from '../services/content-analyzer.js';
@@ -26,6 +26,7 @@ interface WorkOptions {
   category?: string;
   noStrategies?: boolean;
   all?: boolean;
+  files?: string;
 }
 
 function buildPrompt(systemPrompt: string, styleGuide: string, workInstructions: string, transcript: string): string {
@@ -71,7 +72,7 @@ function parsePostsFromResponse(response: string): PostGenerationResult[] {
           platform = undefined;
         }
 
-        return { content, platform };
+        return { content: stripEmDashes(content), platform };
       })
       .filter((item) => {
         const content = item.content;
@@ -215,16 +216,36 @@ function bodyLinksToPublished(body: string, knownSlugs: Set<string>): boolean {
   return false;
 }
 
+// Site rule: generated essays must contain zero em dashes (rywalker.com lint
+// allows at most one per essay, and that one is reserved for human edits).
+// The prompt forbids them; this is the mechanical backstop for any that slip
+// through.
+function stripEmDashes(s: string): string {
+  return s.replace(/[ \t]*—[ \t]*/g, ', ');
+}
+
 function normalizeBlogResult(e: any): BlogGenerationResult {
   return {
-    title: e.title || 'Untitled Blog Draft',
+    title: stripEmDashes(e.title || 'Untitled Blog Draft'),
     slug: e.slug || createSlug(e.title || 'untitled'),
-    description: e.description || '',
+    description: stripEmDashes(e.description || ''),
     tags: Array.isArray(e.tags) ? e.tags : ['ai'],
-    takeaways: Array.isArray(e.takeaways) ? e.takeaways : [],
-    faq: Array.isArray(e.faq) ? e.faq : [],
+    takeaways: Array.isArray(e.takeaways)
+      ? e.takeaways.map((t: any) => (typeof t === 'string' ? stripEmDashes(t) : t))
+      : [],
+    faq: Array.isArray(e.faq)
+      ? e.faq.map((f: any) =>
+          f && typeof f === 'object'
+            ? {
+                ...f,
+                question: typeof f.question === 'string' ? stripEmDashes(f.question) : f.question,
+                answer: typeof f.answer === 'string' ? stripEmDashes(f.answer) : f.answer,
+              }
+            : f
+        )
+      : [],
     sources: Array.isArray(e.sources) ? e.sources : [],
-    body: (e.body || '').replace(/\\n/g, '\n'),
+    body: stripEmDashes((e.body || '').replace(/\\n/g, '\n')),
     motif: typeof e.motif === 'string' ? e.motif : '',
     accent: typeof e.accent === 'string' ? e.accent : undefined,
     accent2: typeof e.accent2 === 'string' ? e.accent2 : undefined,
@@ -278,6 +299,11 @@ SHAPE OF EACH POST (this is the most important constraint):
 - 3-5 short paragraphs. NO ## section headers. The post is itself one section.
 - Open with the claim or a sharp hook. Close with a forward-looking line or a "what to do" pivot.
 - Cut everything that does not directly support the single argument.
+
+HARD BANS (site lint rejects violations, so these are non-negotiable):
+- NO em dashes (—) anywhere: not in the body, title, description, takeaways, or FAQ. Use a comma, colon, or period, or restructure the sentence.
+- NO stock AI phrasings. Never write "the thing nobody says out loud" (or any nobody/no one ... out loud variant), never "saying the quiet part out loud". If a phrase reads like a viral-post template, cut it.
+- Follow the Confidentiality and Sensitivity Guardrails in the style guide exactly: no identifiable customers, prospects, or live deals; no weak internal traction or metrics admissions; no internal pricing or services-playbook numbers; no other companies' private info from conversations; no AI-leads-to-layoffs framing; no condescension toward buyers; team members are spoken of positively or left out.
 
 Output ONLY valid JSON (no markdown fences, no commentary) with this exact structure:
 {
@@ -526,7 +552,17 @@ ${content}
 
 Does this post need updating based on the new transcript content? If yes, respond with ONLY the updated file content — start with the --- frontmatter delimiter, no preamble, no commentary, no markdown fences. If no, respond with exactly "SKIP".
 
-Only update if the transcript content is genuinely related and would improve the post. Preserve all existing frontmatter fields and formatting exactly.`;
+Only update if the transcript content is genuinely related and would improve the post. Preserve all existing frontmatter fields and formatting exactly.
+
+SHAPE CONSTRAINTS (strict — these are short atomic posts):
+- ONE argument per post. 250-450 words in the body, hard cap at 500. NO ## section headers.
+- An update must NOT grow the post. Refine wording, correct facts, sharpen the argument — never append new sections, paragraphs of new material, new takeaways, or new FAQ entries.
+- Keep the existing takeaways count (3) and faq count (2). Do not add entries.
+- If the post is already over 500 body words, an acceptable update may shorten it, never lengthen it.
+- If the transcript contains a NEW argument related to this post's topic, respond "SKIP" — new arguments become new atomic posts, not additions to existing ones.
+- NO em dashes (—) in any text you write. If a sentence you are rewording contains one, replace it with a comma, colon, or period. Site lint allows at most one em dash per essay.
+- NO stock AI phrasings like "the thing nobody says out loud" or "saying the quiet part out loud". Site lint rejects them.
+- NO confidential material from the transcript: no customer- or prospect-identifying details, no weak internal traction or metrics admissions, no internal pricing or margin numbers, no other companies' private info, no AI-leads-to-layoffs framing, and no negative or unverified mentions of team members. Generalize the pattern; drop the specifics.`;
 
       const response = await llm.generate(prompt);
 
@@ -688,7 +724,11 @@ export async function workCommand(options: WorkOptions): Promise<void> {
     logger.info(`Strategy-based generation enabled (${postCount} posts per file)`);
   }
 
-  const inputFiles = findInputFiles(join(cwd, 'input'));
+  let inputFiles = findInputFiles(join(cwd, 'input'));
+  if (options.files) {
+    const wanted = new Set(options.files.split(',').map((f) => f.trim()).filter(Boolean));
+    inputFiles = inputFiles.filter((f) => wanted.has(basename(f)));
+  }
   if (inputFiles.length === 0) {
     logger.error('No input files found in input/ directory');
     logger.info('Add .txt or .md files to input/ and try again');

@@ -358,12 +358,14 @@ ${threadContent}
 Total engagement: ${totalEngagement} (likes + replies + retweets combined)
 
 Create a blog post that:
-1. Expands on the ideas from the ${isThread ? 'thread' : 'tweet'}
-2. Adds context, examples, or deeper explanation
+1. Makes ONE argument — the strongest point from the ${isThread ? 'thread' : 'tweet'} — and cuts everything that does not support it
+2. Adds just enough context or example to ground that single argument
 3. Maintains the voice and tone of the original
-4. Is 500-1200 words
+4. Is 250-450 words (hard cap 500), 3-5 short paragraphs, with NO ## section headers — the post is itself one section
 5. Has a compelling title
-6. IMPORTANT: Include {{EMBED_PLACEHOLDER}} markers where you want X post embeds to appear (3-5 embeds total, spread throughout the post). The first embed should appear early to show the original inspiration.
+6. IMPORTANT: Include {{EMBED_PLACEHOLDER}} markers where you want X post embeds to appear (1-2 embeds total). The first embed should appear early to show the original inspiration.
+7. Uses NO em dashes (—) anywhere, including the title. Use a comma, colon, or period instead. Site lint rejects essays with em dashes.
+8. Uses NO stock AI phrasings: never "the thing nobody says out loud" (or any nobody/no one ... out loud variant), never "saying the quiet part out loud".
 
 Format your response as:
 
@@ -450,14 +452,23 @@ function generateFilename(title: string, frameworkConfig: FrameworkConfig, useMd
   return `${slug}.${ext}`;
 }
 
+// Site rule: generated essays must contain zero em dashes (rywalker.com lint
+// allows at most one per essay, reserved for human edits). The prompt forbids
+// them; this is the mechanical backstop.
+function stripEmDashes(s: string): string {
+  return s.replace(/[ \t]*—[ \t]*/g, ', ');
+}
+
 function parseBlogResponse(response: string): { title: string; content: string } {
   const titleMatch = response.match(/TITLE:\s*(.+)/i);
-  const title = titleMatch ? titleMatch[1].trim() : 'Untitled';
+  const title = titleMatch ? stripEmDashes(titleMatch[1].trim()) : 'Untitled';
 
   // Remove the TITLE line and get the rest as content
-  const content = response
-    .replace(/TITLE:\s*.+/i, '')
-    .trim();
+  const content = stripEmDashes(
+    response
+      .replace(/TITLE:\s*.+/i, '')
+      .trim()
+  );
 
   return { title, content };
 }
