@@ -18,7 +18,7 @@ Edit your `.shiprc.json` file and change the provider to `anthropic`:
     "provider": "anthropic"
   },
   "anthropic": {
-    "model": "claude-3-5-sonnet-20241022",
+    "model": "claude-sonnet-5",
     "maxTokens": 4096
   }
 }
@@ -45,10 +45,10 @@ export ANTHROPIC_API_KEY=sk-ant-api03-your-key-here
 
 ## Available Models
 
-- `claude-3-5-sonnet-20241022` (default) - Best balance of intelligence, speed, and cost
-- `claude-3-opus-20240229` - Most capable model, best for complex tasks
-- `claude-3-sonnet-20240229` - Good balance for most tasks
-- `claude-3-haiku-20240307` - Fastest and most cost-effective
+- `claude-sonnet-5` (default) - Best balance of intelligence, speed, and cost
+- `claude-opus-5` - Most capable Opus-tier model, best for complex tasks
+- `claude-fable-5` - Highest capability tier (premium pricing)
+- `claude-haiku-4-5` - Fastest and most cost-effective
 
 ## Usage
 
@@ -59,7 +59,7 @@ Once configured, use ship normally:
 ship work
 
 # Override model
-ship work --model claude-3-opus-20240229
+ship work --model claude-opus-5
 
 # Check available strategies
 ship work --list-strategies
@@ -75,7 +75,7 @@ In `.shiprc.json`:
     "provider": "anthropic"
   },
   "anthropic": {
-    "model": "claude-3-5-sonnet-20241022",
+    "model": "claude-sonnet-5",
     "maxTokens": 4096
   },
   "generation": {

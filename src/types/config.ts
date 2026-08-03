@@ -50,7 +50,7 @@ export const DEFAULT_CONFIG: T2pConfig = {
     timeout: 60000,
   },
   anthropic: {
-    model: 'claude-3-5-sonnet-20241022',
+    model: 'claude-sonnet-5',
     maxTokens: 4096,
   },
   generation: {

@@ -109,7 +109,7 @@ export class AnthropicService implements LLMService {
   }
 
   getModelName(): string {
-    return this.config.anthropic?.model || 'claude-3-5-sonnet-20241022';
+    return this.config.anthropic?.model || 'claude-sonnet-5';
   }
 
   getTemperature(): number {
@@ -117,7 +117,8 @@ export class AnthropicService implements LLMService {
   }
 
   supportsTemperature(): boolean {
+    // Fable/Mythos 5, Opus 5, Sonnet 5, and Opus 4.7+ reject sampling params (400)
     const model = this.getModelName();
-    return !/^claude-(fable|mythos)-|^claude-opus-4-[7-9]/.test(model);
+    return !/^claude-(fable|mythos)-|^claude-(opus|sonnet)-5|^claude-opus-4-[7-9]/.test(model);
   }
 }

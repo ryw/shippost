@@ -366,7 +366,7 @@ Configuration is stored in `.shippostrc.json`.
     "provider": "anthropic"
   },
   "anthropic": {
-    "model": "claude-sonnet-4-5-20250514",
+    "model": "claude-sonnet-5",
     "maxTokens": 4096
   },
   "generation": {
@@ -395,7 +395,7 @@ See [ANTHROPIC_SETUP.md](ANTHROPIC_SETUP.md) for detailed Claude setup.
 | `ollama.host` | `http://127.0.0.1:11434` | Ollama server URL |
 | `ollama.model` | `llama3.1` | Ollama model |
 | `ollama.timeout` | `60000` | Request timeout (ms) |
-| `anthropic.model` | `claude-3-5-sonnet-20241022` | Claude model |
+| `anthropic.model` | `claude-sonnet-5` | Claude model |
 | `anthropic.maxTokens` | `4096` | Max response tokens |
 | `generation.postsPerTranscript` | `8` | Posts per input file |
 | `generation.temperature` | `0.7` | Creativity (0.0-1.0) |
@@ -598,9 +598,10 @@ Share your style.md:
 - `mixtral` — More creative
 
 **Anthropic:**
-- `claude-sonnet-4-5-20250514` — Best balance (recommended)
-- `claude-3-5-haiku-20241022` — Fastest
-- `claude-3-opus-20240229` — Most capable
+- `claude-sonnet-5` — Best balance (recommended)
+- `claude-haiku-4-5` — Fastest
+- `claude-opus-5` — Most capable
+- `claude-fable-5` — Highest capability tier (premium pricing)
 
 ### Strategies
 

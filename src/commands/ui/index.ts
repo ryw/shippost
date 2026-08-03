@@ -372,7 +372,7 @@ export async function uiCommand(options: UiOptions): Promise<void> {
           const { default: Anthropic } = await import('@anthropic-ai/sdk');
           const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
           const msg = await client.messages.create({
-            model: 'claude-haiku-4-5-20251001',
+            model: 'claude-haiku-4-5',
             max_tokens: 80,
             messages: [{
               role: 'user',
@@ -624,7 +624,7 @@ export async function uiCommand(options: UiOptions): Promise<void> {
                   `Return ONLY a JSON array: [{"id":"...","score":N,"note":"..."}]\n\n${listing}`;
                 try {
                   const msg = await client.messages.create({
-                    model: 'claude-haiku-4-5-20251001',
+                    model: 'claude-haiku-4-5',
                     max_tokens: 4000,
                     messages: [{ role: 'user', content: prompt }],
                   });
