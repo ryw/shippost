@@ -1,3 +1,5 @@
+import { logger } from '../utils/logger.js';
+
 const TYPEFULLY_API_URL = 'https://api.typefully.com/v2';
 
 export interface TypefullyDraftResponse {
@@ -19,6 +21,9 @@ export class TypefullyService {
     }
     this.apiKey = apiKey;
     this.socialSetId = socialSetId || '1';
+    if (!/^[A-Za-z0-9_-]+$/.test(this.socialSetId)) {
+      throw new Error('Invalid Typefully social set id');
+    }
   }
 
   /**
@@ -55,7 +60,14 @@ export class TypefullyService {
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Typefully API error (${response.status}): ${errorText}`);
+      logger.warn(`Typefully API error (${response.status}): ${errorText.slice(0, 500)}`);
+      if (response.status === 401 || response.status === 403) {
+        throw new Error('Typefully authentication failed');
+      }
+      if (response.status === 429) {
+        throw new Error('Typefully rate limit reached. Please try again later.');
+      }
+      throw new Error(`Failed to create Typefully draft (status: ${response.status})`);
     }
 
     return response.json() as Promise<TypefullyDraftResponse>;
