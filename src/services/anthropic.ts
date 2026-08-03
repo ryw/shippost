@@ -23,7 +23,7 @@ export class AnthropicService implements LLMService {
     // Validate API key format
     if (!this.apiKey.startsWith('sk-ant-')) {
       throw new Error(
-        `Invalid Anthropic API key format. Key should start with 'sk-ant-'. Your key has an invalid prefix.`
+        'Invalid Anthropic API key format. Please verify your API key is correct.'
       );
     }
 
@@ -60,7 +60,7 @@ export class AnthropicService implements LLMService {
         if (errorStr.includes('401') || errorStr.includes('authentication')) {
           errorMsg += '✗ Authentication failed: Invalid API key\n';
           errorMsg += `  - Check your API key in .env file or environment\n`;
-          errorMsg += `  - Verify your key starts with 'sk-ant-' and is not expired\n`;
+          errorMsg += `  - Verify your key is current and has API access\n`;
         } else if (errorStr.includes('model')) {
           errorMsg += `✗ Model not found: ${this.getModelName()}\n`;
           errorMsg += '  - Check your model name in .shippostrc.json\n';
