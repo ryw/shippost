@@ -679,7 +679,7 @@ src/
 
 ### Issue Tracking
 
-Uses [bd (beads)](https://github.com/steveyegge/beads). See `AGENTS.md` for workflow.
+Issues are tracked on GitHub. See `AGENTS.md` for workflow.
 
 ```bash
 bd list          # View all issues
