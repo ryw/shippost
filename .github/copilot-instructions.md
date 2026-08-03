@@ -1,54 +1,32 @@
 # GitHub Copilot Instructions
 
-## Issue Tracking with bd
+## Issue Tracking
 
-**IMPORTANT**: This project uses **bd (beads)** for ALL task tracking. Do NOT create markdown TODO lists.
-
-### Essential Commands
-
-```bash
-# Find work
-bd ready --json                    # Unblocked issues
-bd list --status open --json       # All open issues
-
-# Create and manage
-bd create "Title" -t bug|feature|task -p 0-4 --json
-bd update <id> --status in_progress --json
-bd close <id> --reason "Done" --json
-
-# Search
-bd show <id> --json
-```
+This project tracks all work as **GitHub issues** (`gh issue list/create/close`).
+Do NOT create markdown TODO lists or use other trackers.
 
 ### Workflow
 
-1. **Check ready work**: `bd ready --json`
-2. **Claim task**: `bd update <id> --status in_progress`
-3. **Work on it**: Implement, test, document
-4. **Discover new work?** `bd create "Found bug" -p 1 --deps discovered-from:<parent-id> --json`
-5. **Complete**: `bd close <id> --reason "Done" --json`
-6. **Commit together**: Always commit the `.beads/issues.jsonl` file with code changes
+1. **Check open work**: `gh issue list`
+2. **Work on it**: Implement, test, document
+3. **Discover new work?** `gh issue create` referencing the parent issue
+4. **Complete**: close the issue from the PR (`Fixes #<id>`) or `gh issue close`
 
-### Priorities
+## Prompts
 
-- `0` - Critical (security, data loss, broken builds)
-- `1` - High (major features, important bugs)
-- `2` - Medium (default, nice-to-have)
-- `3` - Low (polish, optimization)
-- `4` - Backlog (future ideas)
+- If a feature uses an LLM prompt, create a new file in `prompts/`
+- Load the prompt from the file, never hardcode it
+- Update `ship init` to create the new prompt file
+- Update FileSystemService's `loadPrompt()` type signature
 
 ## Important Rules
 
-- ✅ Use bd for ALL task tracking
-- ✅ Always use `--json` flag for programmatic use
-- ✅ Link discovered work with `discovered-from` dependencies
-- ✅ Check `bd ready` before asking "what should I work on?"
+- ✅ Use GitHub issues for ALL task tracking
 - ✅ Store AI planning docs in `history/` directory
+- ✅ **All prompts must be user-editable in `prompts/` directory**
 - ❌ Do NOT create markdown TODO lists
-- ❌ Do NOT use external issue trackers
 - ❌ Do NOT duplicate tracking systems
 - ❌ Do NOT clutter repo root with planning documents
+- ❌ **Do NOT hardcode prompts in source code**
 
----
-
-**For detailed workflows and advanced features, see [AGENTS.md](../AGENTS.md)**
+For more details, see README.md and QUICKSTART.md.

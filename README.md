@@ -679,13 +679,7 @@ src/
 
 ### Issue Tracking
 
-Issues are tracked on GitHub. See `AGENTS.md` for workflow.
-
-```bash
-bd list          # View all issues
-bd ready         # See unblocked work
-bd create "..."  # Create new issue
-```
+Issues are tracked on GitHub (`gh issue list`). See `AGENTS.md` for workflow.
 
 ---
 

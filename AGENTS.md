@@ -62,7 +62,7 @@ history/
 - ✅ Use bd for ALL task tracking
 - ✅ Always use `--json` flag for programmatic use
 - ✅ Link discovered work with `discovered-from` dependencies
-- ✅ Check `bd ready` before asking "what should I work on?"
+- ✅ Check `gh issue list` before asking "what should I work on?"
 - ✅ Store AI planning docs in `history/` directory
 - ✅ **All prompts must be user-editable in `prompts/` directory**
 - ❌ Do NOT create markdown TODO lists
