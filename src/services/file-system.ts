@@ -11,6 +11,12 @@ import { validateConfig } from '../utils/validation.js';
 
 const LOCK_TIMEOUT_MS = 10_000;
 const LOCK_RETRY_MS = 50;
+const sleepBuffer = new SharedArrayBuffer(4);
+const sleepArray = new Int32Array(sleepBuffer);
+
+function sleepSync(ms: number): void {
+  Atomics.wait(sleepArray, 0, 0, ms);
+}
 
 function acquireLock(lockPath: string): void {
   const deadline = Date.now() + LOCK_TIMEOUT_MS;
@@ -25,9 +31,7 @@ function acquireLock(lockPath: string): void {
         try { mkdirSync(lockPath); return; } catch {}
         throw new FileSystemError('Failed to acquire posts lock — another process may be writing');
       }
-      // Busy wait
-      const until = Date.now() + LOCK_RETRY_MS;
-      while (Date.now() < until) { /* spin */ }
+      sleepSync(LOCK_RETRY_MS);
     }
   }
 }
