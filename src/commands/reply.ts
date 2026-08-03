@@ -1,5 +1,5 @@
 import { createInterface } from 'readline';
-import { writeFileSync, readFileSync, unlinkSync, existsSync } from 'fs';
+import { writeFileSync, readFileSync, existsSync, mkdtempSync, rmSync, statSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { FileSystemService } from '../services/file-system.js';
@@ -184,8 +184,8 @@ async function promptForReplyDecision(): Promise<'post' | 'edit' | 'skip' | 'qui
 function editReply(currentReply: string): string {
   const { style } = logger;
 
-  // Create temp file with current reply
-  const tmpFile = join(tmpdir(), `ship-reply-${Date.now()}.txt`);
+  const tmpDir = mkdtempSync(join(tmpdir(), 'ship-reply-'));
+  const tmpFile = join(tmpDir, 'reply.txt');
   const header = `# Edit your reply below. Lines starting with # are ignored.
 # Save and close the editor to submit, or delete all content to cancel.
 # ─────────────────────────────────────────────────────────────────────
@@ -214,6 +214,10 @@ function editReply(currentReply: string): string {
     }
 
     // Read back the edited content
+    const stats = statSync(tmpFile);
+    if (!stats.isFile()) {
+      throw new Error('Temporary reply file is not a regular file');
+    }
     const edited = readFileSync(tmpFile, 'utf8');
 
     // Remove comment lines and trim
@@ -234,12 +238,7 @@ function editReply(currentReply: string): string {
     logger.error(`Failed to open editor: ${(error as Error).message}`);
     return currentReply;
   } finally {
-    // Clean up temp file
-    try {
-      unlinkSync(tmpFile);
-    } catch {
-      // Ignore cleanup errors
-    }
+    rmSync(tmpDir, { recursive: true, force: true });
   }
 }
 
