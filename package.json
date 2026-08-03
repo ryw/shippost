@@ -1,41 +1,41 @@
 {
-	"name": "shippost",
-	"version": "0.1.0",
-	"description": "Ship posts: Transform meeting transcripts and notes into social media post drafts",
-	"main": "dist/index.js",
-	"type": "module",
-	"bin": {
-		"ship": "./dist/index.js"
-	},
-	"scripts": {
-		"build": "tsc && npm run copy-templates",
-		"copy-templates": "mkdir -p dist/templates && cp src/templates/*.md src/templates/*.json dist/templates/",
-		"dev": "tsx src/index.ts",
-		"prepare": "npm run build"
-	},
-	"keywords": [
-		"cli",
-		"transcript",
-		"social-media",
-		"ollama",
-		"llm"
-	],
-	"author": "",
-	"license": "MIT",
-	"dependencies": {
-		"@anthropic-ai/sdk": "^0.71.0",
-		"commander": "^12.0.0",
-		"dotenv": "^17.2.3",
-		"ollama": "^0.5.0",
-		"open": "^11.0.0",
-		"twitter-api-v2": "^1.28.0"
-	},
-	"devDependencies": {
-		"@types/node": "^22.0.0",
-		"tsx": "^4.7.0",
-		"typescript": "^5.4.0"
-	},
-	"engines": {
-		"node": ">=18.0.0"
-	}
+  "name": "shippost",
+  "version": "2026.8.1",
+  "description": "Ship posts: Transform meeting transcripts and notes into social media post drafts",
+  "main": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "ship": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc && npm run copy-templates",
+    "copy-templates": "mkdir -p dist/templates && cp src/templates/*.md src/templates/*.json dist/templates/",
+    "dev": "tsx src/index.ts",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "cli",
+    "transcript",
+    "social-media",
+    "ollama",
+    "llm"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.71.0",
+    "commander": "^12.0.0",
+    "dotenv": "^17.2.3",
+    "ollama": "^0.5.0",
+    "open": "^11.0.0",
+    "twitter-api-v2": "^1.28.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
 }

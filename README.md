@@ -2,7 +2,7 @@
 
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js >=18](https://img.shields.io/badge/Node.js-%3E%3D18-green.svg)](https://nodejs.org/)
-[![Version 0.1.0](https://img.shields.io/badge/version-0.1.0-orange.svg)](package.json)
+[![Version 2026.8.1](https://img.shields.io/badge/version-2026.8.1-orange.svg)](package.json)
 
 > **Transform meeting transcripts and notes into engaging social media posts with AI**
 
