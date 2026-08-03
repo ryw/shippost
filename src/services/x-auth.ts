@@ -23,6 +23,13 @@ function escapeHtml(str: string): string {
 const CALLBACK_PORT = 9876;
 const REDIRECT_URI = `http://127.0.0.1:${CALLBACK_PORT}/callback`;
 const SCOPES = ['tweet.read', 'tweet.write', 'users.read', 'like.write', 'follows.read', 'follows.write', 'offline.access'];
+const OAUTH_RESPONSE_HEADERS = {
+  'Content-Type': 'text/html; charset=utf-8',
+  'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'",
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'no-referrer',
+};
 
 export class XAuthService {
   private cwd: string;
@@ -139,6 +146,11 @@ export class XAuthService {
           const state = callbackUrl.searchParams.get('state');
           const error = callbackUrl.searchParams.get('error');
 
+          if (state !== expectedState) {
+            reject(new Error('State mismatch. Please try again from the beginning.'));
+            return;
+          }
+
           if (error) {
             reject(new Error(`Authorization failed: ${error}`));
             return;
@@ -146,11 +158,6 @@ export class XAuthService {
 
           if (!code) {
             reject(new Error('No authorization code found in URL. Make sure you copied the full URL.'));
-            return;
-          }
-
-          if (state !== expectedState) {
-            reject(new Error('State mismatch. Please try again from the beginning.'));
             return;
           }
 
@@ -173,6 +180,19 @@ export class XAuthService {
 
     return new Promise((resolve, reject) => {
       const server = createServer((req: IncomingMessage, res: ServerResponse) => {
+        if (req.method !== 'GET') {
+          res.writeHead(405, OAUTH_RESPONSE_HEADERS);
+          res.end('<html><body><h1>Method Not Allowed</h1></body></html>');
+          return;
+        }
+
+        const expectedHost = `127.0.0.1:${CALLBACK_PORT}`;
+        if (req.headers.host !== expectedHost) {
+          res.writeHead(400, OAUTH_RESPONSE_HEADERS);
+          res.end('<html><body><h1>Invalid Host Header</h1></body></html>');
+          return;
+        }
+
         const url = new URL(req.url || '', `http://${req.headers.host}`);
 
         if (url.pathname === '/callback') {
@@ -180,24 +200,8 @@ export class XAuthService {
           const state = url.searchParams.get('state');
           const error = url.searchParams.get('error');
 
-          if (error) {
-            res.writeHead(400, { 'Content-Type': 'text/html' });
-            res.end(`
-              <html>
-                <body>
-                  <h1>Authorization Failed</h1>
-                  <p>Error: ${escapeHtml(error)}</p>
-                  <p>You can close this window.</p>
-                </body>
-              </html>
-            `);
-            server.close();
-            reject(new Error(`Authorization failed: ${error}`));
-            return;
-          }
-
-          if (!code || state !== expectedState) {
-            res.writeHead(400, { 'Content-Type': 'text/html' });
+          if (state !== expectedState) {
+            res.writeHead(400, OAUTH_RESPONSE_HEADERS);
             res.end(`
               <html>
                 <body>
@@ -212,7 +216,39 @@ export class XAuthService {
             return;
           }
 
-          res.writeHead(200, { 'Content-Type': 'text/html' });
+          if (error) {
+            res.writeHead(400, OAUTH_RESPONSE_HEADERS);
+            res.end(`
+              <html>
+                <body>
+                  <h1>Authorization Failed</h1>
+                  <p>Error: ${escapeHtml(error)}</p>
+                  <p>You can close this window.</p>
+                </body>
+              </html>
+            `);
+            server.close();
+            reject(new Error(`Authorization failed: ${error}`));
+            return;
+          }
+
+          if (!code) {
+            res.writeHead(400, OAUTH_RESPONSE_HEADERS);
+            res.end(`
+              <html>
+                <body>
+                  <h1>Invalid Request</h1>
+                  <p>Missing or invalid parameters.</p>
+                  <p>You can close this window.</p>
+                </body>
+              </html>
+            `);
+            server.close();
+            reject(new Error('Invalid OAuth callback'));
+            return;
+          }
+
+          res.writeHead(200, OAUTH_RESPONSE_HEADERS);
           res.end(`
             <html>
               <body>
@@ -223,10 +259,14 @@ export class XAuthService {
           `);
           server.close();
           resolve(code);
+          return;
         }
+
+        res.writeHead(404, OAUTH_RESPONSE_HEADERS);
+        res.end('<html><body><h1>Not Found</h1></body></html>');
       });
 
-      server.listen(CALLBACK_PORT, () => {
+      server.listen(CALLBACK_PORT, '127.0.0.1', () => {
         logger.step('Opening browser for authentication...');
         open(authUrl);
       });
