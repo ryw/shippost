@@ -12,6 +12,7 @@ import { NotInitializedError } from '../utils/errors.js';
 import { readlineSync } from '../utils/readline.js';
 import { formatCount, formatFollowerCount, formatTimeAgo } from '../utils/format.js';
 import { openInEditor, getEditorDisplayName } from '../utils/editor.js';
+import { isRecord, parseJsonFromResponse } from '../utils/json-parser.js';
 
 const SKIP_CACHE_FILE = '.shippost-skipped-tweets.json';
 const SKIP_CACHE_MAX_AGE = 24 * 60 * 60 * 1000; // 24 hours
@@ -268,16 +269,8 @@ export function parseReplyOpportunities(
   tweets: Tweet[]
 ): ReplyOpportunity[] {
   try {
-    // Extract JSON from response (handle markdown code blocks)
-    let jsonStr = response;
-    const jsonMatch = response.match(/\[[\s\S]*\]/);
-    if (jsonMatch) {
-      jsonStr = jsonMatch[0];
-    }
-
-    const parsed: ParsedReplyItem[] = JSON.parse(jsonStr);
-
-    if (!Array.isArray(parsed)) {
+    const parsed = parseJsonFromResponse(response, isParsedReplyItems, 'array');
+    if (!parsed) {
       return [];
     }
 
@@ -300,6 +293,16 @@ export function parseReplyOpportunities(
     logger.error(`Failed to parse LLM response: ${(error as Error).message}`);
     return [];
   }
+}
+
+function isParsedReplyItems(value: unknown): value is ParsedReplyItem[] {
+  if (!Array.isArray(value)) return false;
+  return value.every((item) =>
+    isRecord(item) &&
+    Number.isInteger(item.tweetNumber) &&
+    (item.suggestedReply === undefined || typeof item.suggestedReply === 'string') &&
+    (item.reasoning === undefined || typeof item.reasoning === 'string')
+  );
 }
 
 /** Fetch timeline and apply all reply-candidate filters. Shared by CLI and `ship ui`. */
