@@ -9,6 +9,14 @@ import { logger } from '../utils/logger.js';
 import { readlineSync } from '../utils/readline.js';
 import { formatCount, formatTimeAgo } from '../utils/format.js';
 import { T2pConfig } from '../types/config.js';
+import {
+  assertPathWithinBase,
+  escapeTomlString,
+  escapeYamlDoubleQuoted,
+  getHomeDirectory,
+  validateXPostId,
+  validateXUsername,
+} from '../utils/security.js';
 
 const STATE_FILE = '.ship-blog-state.json';
 const TOKENS_FILE = '.shippost-tokens.json';
@@ -375,8 +383,10 @@ TITLE: [Your title here]
 }
 
 function generateXEmbed(tweet: Tweet): string {
+  const username = validateXUsername(tweet.authorUsername);
+  const id = validateXPostId(tweet.id);
   // Standard X/Twitter embed format that works with most frameworks
-  return `<blockquote class="twitter-tweet"><a href="https://x.com/${tweet.authorUsername}/status/${tweet.id}"></a></blockquote>`;
+  return `<blockquote class="twitter-tweet"><a href="https://x.com/${username}/status/${id}"></a></blockquote>`;
 }
 
 function insertEmbeds(content: string, originalTweet: Tweet, repliesFromOthers: Tweet[]): string {
@@ -409,11 +419,13 @@ function insertEmbeds(content: string, originalTweet: Tweet, repliesFromOthers: 
 
 function generateFrontmatter(title: string, tweet: Tweet, frameworkConfig: FrameworkConfig): string {
   const date = new Date().toISOString().split('T')[0];
+  const username = validateXUsername(tweet.authorUsername);
+  const id = validateXPostId(tweet.id);
 
   const fields: Record<string, string | boolean> = {
-    title: title.replace(/"/g, '\\"'),
+    title,
     date: date,
-    source_tweet: `https://x.com/${tweet.authorUsername}/status/${tweet.id}`,
+    source_tweet: `https://x.com/${username}/status/${id}`,
   };
 
   // Add draft field if the framework uses it (vs drafts folder)
@@ -424,7 +436,7 @@ function generateFrontmatter(title: string, tweet: Tweet, frameworkConfig: Frame
   if (frameworkConfig.frontmatterStyle === 'toml') {
     const lines = Object.entries(fields).map(([key, value]) => {
       if (typeof value === 'boolean') return `${key} = ${value}`;
-      return `${key} = "${value}"`;
+      return `${key} = "${escapeTomlString(value)}"`;
     });
     return `+++\n${lines.join('\n')}\n+++\n\n`;
   }
@@ -432,7 +444,7 @@ function generateFrontmatter(title: string, tweet: Tweet, frameworkConfig: Frame
   // YAML (default)
   const lines = Object.entries(fields).map(([key, value]) => {
     if (typeof value === 'boolean') return `${key}: ${value}`;
-    return `${key}: "${value}"`;
+    return `${key}: "${escapeYamlDoubleQuoted(value)}"`;
   });
   return `---\n${lines.join('\n')}\n---\n\n`;
 }
@@ -485,7 +497,7 @@ function loadConfig(cwd: string): T2pConfig | null {
   }
 
   // Then check home directory for global config
-  const homeConfig = join(process.env.HOME || '', CONFIG_FILE);
+  const homeConfig = join(getHomeDirectory(), CONFIG_FILE);
   if (existsSync(homeConfig)) {
     try {
       return JSON.parse(readFileSync(homeConfig, 'utf8'));
@@ -526,16 +538,16 @@ export async function blogCommand(options: BlogFromXOptions, command: Command): 
     let outputDir: string;
     const outputExplicitlyProvided = command.getOptionValueSource('output') === 'cli';
     if (outputExplicitlyProvided && options.output) {
-      outputDir = options.output;
+      outputDir = assertPathWithinBase(cwd, options.output, 'Blog output directory');
     } else if (config.blog?.outputDir) {
-      outputDir = config.blog.outputDir;
+      outputDir = assertPathWithinBase(cwd, config.blog.outputDir, 'Blog output directory');
     } else if (options.output) {
       // CLI default
-      outputDir = options.output;
+      outputDir = assertPathWithinBase(cwd, options.output, 'Blog output directory');
     } else {
       // Try to find existing content directory, or use framework default
       const existingDir = findExistingContentDir(cwd, framework);
-      outputDir = existingDir || frameworkConfig.draftsDir;
+      outputDir = assertPathWithinBase(cwd, existingDir || frameworkConfig.draftsDir, 'Blog output directory');
     }
 
     if (!existsSync(outputDir)) {
@@ -561,9 +573,10 @@ export async function blogCommand(options: BlogFromXOptions, command: Command): 
     // Check for tokens in current dir first, then home dir
     let tokenDir = cwd;
     if (!existsSync(join(cwd, TOKENS_FILE))) {
-      const homeTokens = join(process.env.HOME || '', TOKENS_FILE);
+      const homeDir = getHomeDirectory();
+      const homeTokens = join(homeDir, TOKENS_FILE);
       if (existsSync(homeTokens)) {
-        tokenDir = process.env.HOME || '';
+        tokenDir = homeDir;
       }
     }
 
