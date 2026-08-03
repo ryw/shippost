@@ -27,6 +27,7 @@ const REDIRECT_URI = `http://127.0.0.1:${CALLBACK_PORT}/callback`;
 const SCOPES = ['tweet.read', 'tweet.write', 'users.read', 'like.write', 'follows.read', 'follows.write', 'offline.access'];
 const TOKEN_STORE_VERSION = 1;
 const TOKEN_STORE_ALGORITHM = 'aes-256-gcm';
+const TOKEN_EXPIRY_BUFFER_MS = 60_000;
 const OAUTH_RESPONSE_HEADERS = {
   'Content-Type': 'text/html; charset=utf-8',
   'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'",
@@ -422,7 +423,7 @@ export class XAuthService {
    * Check if tokens are expired
    */
   isTokenExpired(tokens: XTokens): boolean {
-    return new Date(tokens.expiresAt) < new Date();
+    return new Date(tokens.expiresAt).getTime() <= Date.now() + TOKEN_EXPIRY_BUFFER_MS;
   }
 
   /**
