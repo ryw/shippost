@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync, existsSync, mkdirSync, writeFileSync } from 'fs';
+import { readdirSync, readFileSync, statSync, existsSync, mkdirSync, writeFileSync, realpathSync } from 'fs';
 import { join, relative, basename } from 'path';
 import { FileSystemService } from '../services/file-system.js';
 import { createLLMService } from '../services/llm-factory.js';
@@ -105,13 +105,28 @@ function findInputFiles(inputDir: string): string[] {
   try {
     const files = readdirSync(inputDir);
     const textFiles: string[] = [];
+    const realInputDir = realpathSync(inputDir);
 
     for (const file of files) {
       const filePath = join(inputDir, file);
-      const stats = statSync(filePath);
+      let realPath: string;
+      try {
+        realPath = realpathSync(filePath);
+      } catch {
+        logger.warn(`Skipping ${file}: unable to resolve path`);
+        continue;
+      }
+
+      const rel = relative(realInputDir, realPath);
+      if (rel === '' || rel.startsWith('..') || rel.startsWith('/') || /^[A-Za-z]:/.test(rel)) {
+        logger.warn(`Skipping ${file}: path resolves outside input/`);
+        continue;
+      }
+
+      const stats = statSync(realPath);
 
       if (stats.isFile() && (file.endsWith('.txt') || file.endsWith('.md'))) {
-        textFiles.push(filePath);
+        textFiles.push(realPath);
       }
     }
 
