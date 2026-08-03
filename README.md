@@ -98,6 +98,7 @@ That's it! Your posts are in `posts.jsonl`, ready for review.
 | `ship init` | Initialize project structure |
 | `ship work` | Generate posts from input files |
 | `ship posts` | View generated posts |
+| `ship ui` | Local web app for the whole pipeline |
 | `ship review` | Interactively review and stage posts |
 | `ship analyze-x` | Generate style guide from your tweets |
 | `ship reply` | Find and post replies on X |
@@ -195,6 +196,27 @@ ship posts --eval               # Score posts missing scores
 - `--min-score <n>` — Minimum banger score
 - `--source <text>` — Filter by source filename
 - `--eval` — Evaluate unscored posts
+
+---
+
+### `ship ui`
+
+Local web app (http://127.0.0.1:4747) covering the whole pipeline in five tabs. `ship review --web` opens the same app.
+
+```bash
+ship ui                         # Start the app and open the browser
+ship ui --port 5000             # Custom port
+ship ui --min-score 60          # Filter the review queue
+```
+
+**Tabs:**
+- **Generate** — card per unprocessed transcript with attendees and a one-line summary; `p` process / `k` skip. Processing queues sequentially with a live status line; skips persist.
+- **Review** — score-sorted queue; `s` stage, `r` reject, `e` edit, `k` skip, `⌘s` stage while editing. Select text and hit `tab` to have the LLM rewrite just that span in your voice. Edits persist per post until decided.
+- **Reply** — scan your timeline for reply opportunities, edit inline, post + like or skip.
+- **Stats** — account tiles, 7-day metrics, 90-day goal progress, top post.
+- **Unfollow** — candidates ranked by LLM relevance to your interests plus quality signals, protected by a feed-presence check and a whitelist. Unfollow decisions persist to disk and retry automatically if you hit X API limits.
+
+The server is localhost-only. Jobs (generation, scans, unfollows) run server-side, so you can close the tab and come back.
 
 ---
 
