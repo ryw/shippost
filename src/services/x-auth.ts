@@ -1,9 +1,11 @@
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { TwitterApi } from 'twitter-api-v2';
 import open from 'open';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { chmodSync, existsSync, lstatSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { createInterface } from 'readline';
+import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto';
+import { hostname, userInfo } from 'os';
 import type { XTokens, XTokensStore } from '../types/x-tokens.js';
 import { logger } from '../utils/logger.js';
 
@@ -23,6 +25,8 @@ function escapeHtml(str: string): string {
 const CALLBACK_PORT = 9876;
 const REDIRECT_URI = `http://127.0.0.1:${CALLBACK_PORT}/callback`;
 const SCOPES = ['tweet.read', 'tweet.write', 'users.read', 'like.write', 'follows.read', 'follows.write', 'offline.access'];
+const TOKEN_STORE_VERSION = 1;
+const TOKEN_STORE_ALGORITHM = 'aes-256-gcm';
 const OAUTH_RESPONSE_HEADERS = {
   'Content-Type': 'text/html; charset=utf-8',
   'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'",
@@ -30,6 +34,16 @@ const OAUTH_RESPONSE_HEADERS = {
   'X-Frame-Options': 'DENY',
   'Referrer-Policy': 'no-referrer',
 };
+
+interface EncryptedXTokensStore {
+  version: typeof TOKEN_STORE_VERSION;
+  encrypted: true;
+  algorithm: typeof TOKEN_STORE_ALGORITHM;
+  salt: string;
+  iv: string;
+  tag: string;
+  data: string;
+}
 
 export class XAuthService {
   private cwd: string;
@@ -288,11 +302,16 @@ export class XAuthService {
     }
 
     try {
+      this.assertTokenPathSafe();
       const data = readFileSync(this.tokensPath, 'utf-8');
-      const store: XTokensStore = JSON.parse(data);
-      return store.x || null;
+      const parsed: unknown = JSON.parse(data);
+      const tokens = this.parseTokenStore(parsed);
+      if (tokens && !isEncryptedTokenStore(parsed)) {
+        this.saveTokens(tokens);
+      }
+      return tokens;
     } catch (error) {
-      return null;
+      throw new Error(`Failed to load OAuth tokens: ${(error as Error).message}`);
     }
   }
 
@@ -300,20 +319,103 @@ export class XAuthService {
    * Save tokens to disk
    */
   private saveTokens(tokens: XTokens): void {
-    let store: XTokensStore = {};
+    const store = this.encryptTokenStore(tokens);
+    this.writeTokenFile(JSON.stringify(store, null, 2));
+  }
 
-    if (existsSync(this.tokensPath)) {
-      try {
-        const data = readFileSync(this.tokensPath, 'utf-8');
-        store = JSON.parse(data);
-      } catch (error) {
-        // Ignore parse errors, will overwrite
-      }
+  private parseTokenStore(store: unknown): XTokens | null {
+    if (isEncryptedTokenStore(store)) {
+      return this.decryptTokenStore(store);
+    }
+    if (isPlainTokenStore(store)) {
+      return store.x || null;
+    }
+    return null;
+  }
+
+  private encryptTokenStore(tokens: XTokens): EncryptedXTokensStore {
+    const salt = randomBytes(16);
+    const iv = randomBytes(12);
+    const key = this.deriveTokenKey(salt);
+    const cipher = createCipheriv(TOKEN_STORE_ALGORITHM, key, iv);
+    const encrypted = Buffer.concat([
+      cipher.update(JSON.stringify({ x: tokens }), 'utf8'),
+      cipher.final(),
+    ]);
+
+    return {
+      version: TOKEN_STORE_VERSION,
+      encrypted: true,
+      algorithm: TOKEN_STORE_ALGORITHM,
+      salt: salt.toString('base64'),
+      iv: iv.toString('base64'),
+      tag: cipher.getAuthTag().toString('base64'),
+      data: encrypted.toString('base64'),
+    };
+  }
+
+  private decryptTokenStore(store: EncryptedXTokensStore): XTokens | null {
+    const salt = Buffer.from(store.salt, 'base64');
+    const iv = Buffer.from(store.iv, 'base64');
+    const key = this.deriveTokenKey(salt);
+    const decipher = createDecipheriv(TOKEN_STORE_ALGORITHM, key, iv);
+    decipher.setAuthTag(Buffer.from(store.tag, 'base64'));
+    const decrypted = Buffer.concat([
+      decipher.update(Buffer.from(store.data, 'base64')),
+      decipher.final(),
+    ]);
+    const parsed: unknown = JSON.parse(decrypted.toString('utf8'));
+    if (!isPlainTokenStore(parsed)) return null;
+    return parsed.x || null;
+  }
+
+  private deriveTokenKey(salt: Buffer): Buffer {
+    return scryptSync(getTokenSecret(), salt, 32);
+  }
+
+  private assertTokenPathSafe(): void {
+    const stats = lstatSync(this.tokensPath);
+    if (stats.isSymbolicLink()) {
+      throw new Error('OAuth token file must not be a symbolic link');
     }
 
-    store.x = tokens;
-    // Write with restrictive permissions (owner read/write only) to protect OAuth tokens
-    writeFileSync(this.tokensPath, JSON.stringify(store, null, 2), { mode: 0o600 });
+    if (process.platform !== 'win32') {
+      const mode = statSync(this.tokensPath).mode & 0o777;
+      if ((mode & 0o077) !== 0) {
+        chmodSync(this.tokensPath, 0o600);
+      }
+    }
+  }
+
+  private writeTokenFile(contents: string): void {
+    const tempPath = `${this.tokensPath}.tmp.${randomBytes(8).toString('hex')}`;
+    try {
+      if (existsSync(this.tokensPath)) {
+        this.assertTokenPathSafe();
+      }
+
+      writeFileSync(tempPath, contents, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+      if (process.platform !== 'win32') {
+        chmodSync(tempPath, 0o600);
+      }
+
+      renameSync(tempPath, this.tokensPath);
+
+      if (process.platform !== 'win32') {
+        chmodSync(this.tokensPath, 0o600);
+        const mode = statSync(this.tokensPath).mode & 0o777;
+        if (mode !== 0o600) {
+          throw new Error(`OAuth token file has insecure permissions: ${mode.toString(8)}`);
+        }
+      }
+    } catch (error) {
+      try {
+        if (existsSync(tempPath)) unlinkSync(tempPath);
+      } catch {
+        // Best-effort cleanup.
+      }
+      throw error;
+    }
   }
 
   /**
@@ -372,4 +474,54 @@ export class XAuthService {
 
     return tokens.accessToken;
   }
+}
+
+function isToken(value: unknown): value is XTokens {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const token = value as Record<string, unknown>;
+  return (
+    typeof token.accessToken === 'string' &&
+    (token.refreshToken === undefined || typeof token.refreshToken === 'string') &&
+    typeof token.expiresAt === 'string'
+  );
+}
+
+function isPlainTokenStore(value: unknown): value is XTokensStore {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const store = value as Record<string, unknown>;
+  return store.x === undefined || isToken(store.x);
+}
+
+function isEncryptedTokenStore(value: unknown): value is EncryptedXTokensStore {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const store = value as Record<string, unknown>;
+  return (
+    store.version === TOKEN_STORE_VERSION &&
+    store.encrypted === true &&
+    store.algorithm === TOKEN_STORE_ALGORITHM &&
+    typeof store.salt === 'string' &&
+    typeof store.iv === 'string' &&
+    typeof store.tag === 'string' &&
+    typeof store.data === 'string'
+  );
+}
+
+function getTokenSecret(): string {
+  if (process.env.SHIPPOST_TOKEN_KEY) {
+    return process.env.SHIPPOST_TOKEN_KEY;
+  }
+
+  let username = process.env.USER || process.env.USERNAME || 'unknown-user';
+  try {
+    username = userInfo().username || username;
+  } catch {
+    // Keep the environment fallback.
+  }
+
+  return [
+    'shippost-token-storage-v1',
+    process.env.HOME || '',
+    username,
+    hostname(),
+  ].join('|');
 }
