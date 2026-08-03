@@ -15,6 +15,7 @@ import { granolaSyncCommand } from './granola-sync.js';
 import { writeCover } from '../utils/svg-cover.js';
 import { generateConceptCoverSvg } from '../utils/concept-cover.js';
 import type { LLMService } from '../services/llm-service.js';
+import { isRecord, parseJsonFromResponse } from '../utils/json-parser.js';
 
 interface WorkOptions {
   model?: string;
@@ -268,6 +269,21 @@ function normalizeBlogResult(e: any): BlogGenerationResult {
   };
 }
 
+function isBlogJsonResponse(value: unknown): value is { essays?: unknown[]; title?: unknown; body?: unknown } | unknown[] {
+  if (Array.isArray(value)) return value.every(isBlogResultCandidate);
+  if (!isRecord(value)) return false;
+  if (Array.isArray(value.essays)) return value.essays.every(isBlogResultCandidate);
+  return isBlogResultCandidate(value);
+}
+
+function isBlogResultCandidate(value: unknown): boolean {
+  return isRecord(value) && (
+    typeof value.title === 'string' ||
+    typeof value.body === 'string' ||
+    typeof value.slug === 'string'
+  );
+}
+
 async function generateBlogDrafts(
   llm: LLMService,
   transcript: string,
@@ -370,14 +386,16 @@ ${transcript}`;
   const response = await llm.generate(prompt);
 
   try {
-    const cleaned = response.replace(/^```json?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-    const parsed = JSON.parse(cleaned);
+    const parsed = parseJsonFromResponse(response, isBlogJsonResponse, 'any');
+    if (!parsed) {
+      throw new Error('No valid JSON blog response');
+    }
 
     let essays: any[];
-    if (Array.isArray(parsed.essays)) {
-      essays = parsed.essays;
-    } else if (Array.isArray(parsed)) {
+    if (Array.isArray(parsed)) {
       essays = parsed;
+    } else if (Array.isArray(parsed.essays)) {
+      essays = parsed.essays;
     } else if (parsed.title || parsed.body) {
       // Single-essay fallback shape (older prompt response)
       essays = [parsed];

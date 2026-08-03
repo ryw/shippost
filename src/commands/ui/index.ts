@@ -41,6 +41,7 @@ import {
   fetchGranolaDocuments,
 } from '../granola-sync.js';
 import { PAGE } from './page.js';
+import { isRecord, parseJsonFromResponse } from '../../utils/json-parser.js';
 
 const TRANSCRIPT_META_FILE = '.shippost-transcript-meta.json';
 const RELEVANCE_CACHE_FILE = '.shippost-relevance-cache.json';
@@ -65,6 +66,22 @@ async function savePendingUnfollows(cwd: string, pending: Record<string, { usern
 const RY_INTERESTS =
   'agentic engineering and AI coding agents, developer tools, startups/founders/venture, ' +
   'cloud infrastructure, Postgres and data systems, engineering leadership, Cincinnati tech';
+
+interface RelevanceScoreResult {
+  id: string;
+  score: number;
+  note?: string;
+}
+
+function isRelevanceScoreResults(value: unknown): value is RelevanceScoreResult[] {
+  if (!Array.isArray(value)) return false;
+  return value.every((item) =>
+    isRecord(item) &&
+    typeof item.id === 'string' &&
+    typeof item.score === 'number' &&
+    (item.note === undefined || typeof item.note === 'string')
+  );
+}
 
 interface TranscriptMeta {
   [filename: string]: { attendees?: string[]; summary?: string; skipped?: boolean };
@@ -630,10 +647,10 @@ export async function uiCommand(options: UiOptions): Promise<void> {
                   });
                   const block = msg.content.find((b) => b.type === 'text');
                   const text = block && block.type === 'text' ? block.text : '[]';
-                  const arr = JSON.parse(text.match(/\[[\s\S]*\]/)?.[0] || '[]');
+                  const arr = parseJsonFromResponse(text, isRelevanceScoreResults, 'array') || [];
                   for (const r of arr) {
-                    const acct = batch.find((a) => a.id === String(r.id));
-                    if (acct && typeof r.score === 'number') {
+                    const acct = batch.find((a) => a.id === r.id);
+                    if (acct) {
                       relCache[acct.id] = { score: r.score, note: String(r.note || ''), username: acct.username, bioScored: biosAvailable };
                     }
                   }
