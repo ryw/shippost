@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
-import { join } from 'path';
+import { basename, join } from 'path';
 import { homedir } from 'os';
 import { logger } from '../utils/logger.js';
 import { isShippostProject } from '../utils/validation.js';
@@ -196,6 +196,9 @@ function cleanMeetingTitle(title: string): string {
 }
 
 function generateFilename(doc: GranolaDocument): string {
+  if (!/^\d{4}-\d{2}-\d{2}/.test(doc.created_at)) {
+    throw new Error('Invalid Granola document date');
+  }
   const date = doc.created_at.slice(0, 10); // YYYY-MM-DD
 
   // Clean up the meeting title
@@ -204,7 +207,7 @@ function generateFilename(doc: GranolaDocument): string {
   // Truncate long names
   const snakeName = toSnakeCase(cleanedTitle).slice(0, 50);
 
-  return `${date}_${snakeName}.txt`;
+  return basename(`${date}_${snakeName || 'untitled'}.txt`);
 }
 
 export async function granolaSyncCommand(options: GranolaSyncOptions): Promise<void> {
