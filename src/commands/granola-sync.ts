@@ -10,11 +10,13 @@ interface GranolaSyncOptions {
   force?: boolean;
 }
 
-interface GranolaDocument {
+export interface GranolaDocument {
   id: string;
   title: string;
   created_at: string;
   transcribe?: boolean;
+  people?: { attendees?: { name?: string; email?: string }[] };
+  google_calendar_event?: { attendees?: { displayName?: string; email?: string }[] };
 }
 
 interface GranolaSyncState {
@@ -37,7 +39,7 @@ const GRANOLA_API_HEADERS = {
 // (cache-v6.json, granola.db) is no longer plaintext-readable. We instead
 // pull the still-readable refresh_token from the leftover supabase.json,
 // mint a fresh access_token, and hit the API directly.
-function loadGranolaRefreshToken(): string {
+export function loadGranolaRefreshToken(): string {
   const authPath = join(GRANOLA_DIR, 'supabase.json');
   if (!existsSync(authPath)) {
     throw new Error('Granola credentials not found. Make sure the Granola app is installed and you are logged in.');
@@ -58,7 +60,7 @@ function loadGranolaRefreshToken(): string {
   return tokens.refresh_token;
 }
 
-async function refreshAccessToken(refreshToken: string): Promise<string> {
+export async function refreshAccessToken(refreshToken: string): Promise<string> {
   const response = await fetch('https://api.granola.ai/v1/refresh-access-token', {
     method: 'POST',
     headers: GRANOLA_API_HEADERS,
@@ -79,7 +81,7 @@ async function refreshAccessToken(refreshToken: string): Promise<string> {
   return data.access_token;
 }
 
-async function fetchGranolaDocuments(accessToken: string): Promise<Record<string, GranolaDocument>> {
+export async function fetchGranolaDocuments(accessToken: string): Promise<Record<string, GranolaDocument>> {
   const PAGE_SIZE = 1000;
   const documents: Record<string, GranolaDocument> = {};
   let offset = 0;

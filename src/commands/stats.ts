@@ -11,7 +11,7 @@ import type { UserV2WithMetrics, TweetV2WithMetrics } from '../types/x-api-respo
 const STATS_CACHE_FILE = '.shippost-stats-cache.json';
 const STATS_CACHE_MAX_AGE = 60 * 60 * 1000; // 1 hour (Basic tier has strict rate limits)
 
-interface TweetWithMetrics {
+export interface TweetWithMetrics {
   id: string;
   text: string;
   createdAt: string;
@@ -302,7 +302,7 @@ export async function statsCommand(): Promise<void> {
 }
 
 // Helper to get user metrics
-async function getMeWithMetrics(accessToken: string): Promise<{ followers: number; following: number; tweets: number } | null> {
+export async function getMeWithMetrics(accessToken: string): Promise<{ followers: number; following: number; tweets: number } | null> {
   try {
     const { TwitterApi } = await import('twitter-api-v2');
     const client = new TwitterApi(accessToken);
@@ -320,7 +320,7 @@ async function getMeWithMetrics(accessToken: string): Promise<{ followers: numbe
 }
 
 // Helper to get tweets with full metrics (paginates to get up to `count` tweets)
-async function getRecentTweetsWithMetrics(accessToken: string, userId: string, count: number): Promise<TweetWithMetrics[]> {
+export async function getRecentTweetsWithMetrics(accessToken: string, userId: string, count: number): Promise<TweetWithMetrics[]> {
   try {
     const { TwitterApi } = await import('twitter-api-v2');
     const client = new TwitterApi(accessToken);
@@ -398,7 +398,7 @@ async function getRecentTweetsWithMetrics(accessToken: string, userId: string, c
   }
 }
 
-function getDailyPostCounts(tweets: TweetWithMetrics[], days: number): number[] {
+export function getDailyPostCounts(tweets: TweetWithMetrics[], days: number): number[] {
   const counts: number[] = new Array(days).fill(0);
   const now = new Date();
 
@@ -412,7 +412,7 @@ function getDailyPostCounts(tweets: TweetWithMetrics[], days: number): number[] 
   return counts;
 }
 
-function getDailyImpressions(tweets: TweetWithMetrics[], days: number): number[] {
+export function getDailyImpressions(tweets: TweetWithMetrics[], days: number): number[] {
   const totals: number[] = new Array(days).fill(0);
   const now = new Date();
 
@@ -426,7 +426,7 @@ function getDailyImpressions(tweets: TweetWithMetrics[], days: number): number[]
   return totals;
 }
 
-function getHourlyEngagement(tweets: TweetWithMetrics[]): { hour: number; avgEngagement: number }[] {
+export function getHourlyEngagement(tweets: TweetWithMetrics[]): { hour: number; avgEngagement: number }[] {
   const hourData: { total: number; count: number }[] = new Array(24).fill(null).map(() => ({ total: 0, count: 0 }));
 
   tweets.forEach(t => {
