@@ -75,6 +75,7 @@ export interface Tweet {
 
 export class XApiService {
   private client: TwitterApi;
+  private mePromise?: Promise<UserV2>;
 
   constructor(accessToken: string) {
     this.client = new TwitterApi(accessToken);
@@ -84,8 +85,16 @@ export class XApiService {
    * Get authenticated user's information
    */
   async getMe(): Promise<UserV2> {
-    const { data } = await this.client.v2.me();
-    return data;
+    if (!this.mePromise) {
+      this.mePromise = this.client.v2.me()
+        .then(({ data }) => data)
+        .catch((error) => {
+          this.mePromise = undefined;
+          throw error;
+        });
+    }
+
+    return this.mePromise;
   }
 
   /**
@@ -251,8 +260,8 @@ export class XApiService {
    */
   async likeTweet(tweetId: string): Promise<void> {
     try {
-      const me = await this.client.v2.me();
-      await this.client.v2.like(me.data.id, tweetId);
+      const me = await this.getMe();
+      await this.client.v2.like(me.id, tweetId);
     } catch (error) {
       handleApiError(error as TwitterApiError, 'Failed to like tweet');
     }
