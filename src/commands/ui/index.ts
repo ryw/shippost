@@ -450,6 +450,25 @@ export async function uiCommand(options: UiOptions): Promise<void> {
           return send(202, JSON.stringify({ queued: genQueue.length }));
         }
 
+        if (route === 'POST /api/granola/sync') {
+          const started = startJob('granola-sync', async (job) => {
+            await new Promise<void>((resolve, reject) => {
+              const child = spawn(process.execPath, [process.argv[1], 'granola-sync'], { cwd });
+              const onData = (chunk: Buffer) => {
+                stripAnsi(chunk.toString()).split('\n').forEach((line) => {
+                  if (line.trim()) job.log.push(line.trimEnd());
+                });
+              };
+              child.stdout.on('data', onData);
+              child.stderr.on('data', onData);
+              child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`granola-sync exited with code ${code}`))));
+              child.on('error', reject);
+            });
+            attendeesPromise = null; // new docs — refetch attendee names on next queue load
+          });
+          return send(202, JSON.stringify({ started }));
+        }
+
         // ── reply ────────────────────────────────────────────────────
         if (route === 'POST /api/reply/scan') {
           const ok = startJob('reply', async (job) => {

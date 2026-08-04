@@ -404,7 +404,39 @@ function initGenerate() {
   }).catch((e) => toast('⚠️ ' + e.message));
   $('genProcess').onclick = processTranscript;
   $('genSkip').onclick = skipTranscript;
+  syncGranola();
   watchGenerate(); // pick up any batch already running server-side
+}
+
+// Pull new Granola transcripts on tab load so fresh meetings show up
+// without a manual \`ship granola-sync\`.
+function syncGranola() {
+  api('POST', '/api/granola/sync').then(() => {
+    const tick = async () => {
+      const j = await api('GET', '/api/job/granola-sync');
+      if (j.running) {
+        if (!gpolling) {
+          $('genStatus').style.display = 'flex';
+          $('genStatusText').textContent = '⟳ syncing new Granola transcripts…';
+        }
+        setTimeout(tick, 1500);
+        return;
+      }
+      if (!gpolling) $('genStatus').style.display = 'none';
+      if (j.error) { toast('⚠️ Granola sync: ' + j.error); return; }
+      const cur = gqueue[0] && gqueue[0].name;
+      const d = await api('GET', '/api/transcripts');
+      const fresh = d.transcripts.length - gqueue.length;
+      gqueue = d.transcripts;
+      // Keep whatever Ry is reading at the front of the queue
+      const i = cur ? gqueue.findIndex((t) => t.name === cur) : -1;
+      if (i > 0) gqueue.unshift(gqueue.splice(i, 1)[0]);
+      if (fresh > 0) toast(fresh + ' new transcript' + (fresh === 1 ? '' : 's') + ' from Granola');
+      if (i <= 0) showTranscript();
+      else if (activeTab === 'generate') $('progress').textContent = gqueue.length + ' waiting';
+    };
+    tick();
+  }).catch(() => {}); // sync is best-effort; the local queue still works
 }
 
 async function showTranscript() {
