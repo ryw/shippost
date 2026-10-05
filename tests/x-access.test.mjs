@@ -16,6 +16,6 @@ test('disabled workspace blocks OAuth, API clients, and direct analytics clients
     process.chdir(dir);
     assert.throws(() => new XApiService('synthetic'), /X API access is disabled/);
     assert.equal(await getMeWithMetrics('synthetic'), null);
-    await assert.rejects(() => getRecentTweetsWithMetrics('synthetic', 'synthetic', 1), /X API access is disabled/);
+    await assert.rejects(() => getRecentTweetsWithMetrics('synthetic', 'synthetic', 1), error => /X API access is disabled/.test(error.message));
   } finally { process.chdir(before); rmSync(dir, { recursive: true, force: true }); }
 });
