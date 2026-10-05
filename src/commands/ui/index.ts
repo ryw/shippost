@@ -1,3 +1,4 @@
+import { syncGranolaAPI } from '../../services/granola-api.js';
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { spawn, exec } from 'child_process';
 import { readFileSync, existsSync, readdirSync, statSync } from 'fs';
@@ -177,6 +178,7 @@ export async function uiCommand(options: UiOptions): Promise<void> {
         for (const [docId, v] of Object.entries(syncState.syncedDocuments || {})) {
           docToFile[docId] = (v as { filename: string }).filename;
         }
+        if (process.env.GRANOLA_API_KEY) return {}; // Official imports persist attendee metadata locally.
         const token = await refreshAccessToken(loadGranolaRefreshToken());
         const docs = await fetchGranolaDocuments(token);
         const out: Record<string, string[]> = {};
@@ -547,21 +549,12 @@ export async function uiCommand(options: UiOptions): Promise<void> {
 
         if (route === 'POST /api/granola/sync') {
           const started = startJob('granola-sync', async (job) => {
-            // Surface actionable local authentication errors before starting the CLI.
-            loadGranolaRefreshToken();
-            await new Promise<void>((resolve, reject) => {
-              const child = spawn(process.execPath, [process.argv[1], 'granola-sync'], { cwd });
-              const onData = (chunk: Buffer) => {
-                stripAnsi(chunk.toString()).split('\n').forEach((line) => {
-                  if (line.trim()) job.log.push(line.trimEnd());
-                });
-              };
-              child.stdout.on('data', onData);
-              child.stderr.on('data', onData);
-              child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`granola-sync exited with code ${code}`))));
-              child.on('error', reject);
-            });
-            attendeesPromise = null; // new docs — refetch attendee names on next queue load
+            if (process.env.GRANOLA_API_KEY) {
+              await syncGranolaAPI(cwd, process.env.GRANOLA_API_KEY, line => job.log.push(line));
+              attendeesPromise = null;
+              return;
+            }
+            throw new Error('Save your Granola API key in Settings → Credentials, then sync again.');
           });
           return send(202, JSON.stringify({ started }));
         }

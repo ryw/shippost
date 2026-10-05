@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 
-export const SECRET_KEYS = ['ANTHROPIC_API_KEY', 'TYPEFULLY_API_KEY', 'TWITTER_CLIENT_SECRET'] as const;
+export const SECRET_KEYS = ['ANTHROPIC_API_KEY', 'TYPEFULLY_API_KEY', 'TWITTER_CLIENT_SECRET', 'GRANOLA_API_KEY'] as const;
 export type SecretKey = typeof SECRET_KEYS[number];
 const injected = new Map<SecretKey, string>();
 

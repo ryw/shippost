@@ -34,7 +34,7 @@ export const SETTINGS_FIELDS: Field[] = [
   { key: 'blog.imageDir', label: 'Image output directory', group: 'Blog', type: 'text' },
   { key: 'blog.imagePathPrefix', label: 'Public image URL prefix', group: 'Blog', type: 'text' },
 ];
-const SECRET_LABELS = { ANTHROPIC_API_KEY: 'Anthropic API key', TYPEFULLY_API_KEY: 'Typefully API key', TWITTER_CLIENT_SECRET: 'X client secret' };
+const SECRET_LABELS = { ANTHROPIC_API_KEY: 'Anthropic API key', TYPEFULLY_API_KEY: 'Typefully API key', TWITTER_CLIENT_SECRET: 'X client secret', GRANOLA_API_KEY: 'Granola API key' };
 function get(object: any, key: string): unknown { return key.split('.').reduce((value, part) => value?.[part], object); }
 function set(object: any, key: string, value: unknown): void {
   const parts = key.split('.');

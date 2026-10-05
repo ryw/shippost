@@ -498,7 +498,7 @@ function syncGranola() {
       if (j.running) {
         if (!gpolling) {
           $('genStatus').style.display = 'flex';
-          $('genStatusText').textContent = '⟳ syncing new Granola transcripts…';
+          $('genStatusText').textContent = '⟳ syncing recent Granola notes…';
         }
         setTimeout(tick, 1500);
         return;
@@ -520,12 +520,13 @@ function syncGranola() {
       // Keep whatever Ry is reading at the front of the queue
       const i = cur ? gqueue.findIndex((t) => t.name === cur) : -1;
       if (i > 0) gqueue.unshift(gqueue.splice(i, 1)[0]);
-      if (fresh > 0) toast(fresh + ' new transcript' + (fresh === 1 ? '' : 's') + ' from Granola');
+      if (fresh > 0) toast(fresh + ' new meeting' + (fresh === 1 ? '' : 's') + ' from Granola');
+      if (fresh <= 0) toast('Granola sync complete. No new meetings in the past 30 days; check Personal notes access if meetings are missing.');
       if (i <= 0) showTranscript();
       else if (activeTab === 'generate') $('progress').textContent = gqueue.length + ' waiting';
     };
     tick();
-  }).catch(() => {}); // sync is best-effort; the local queue still works
+  }).catch((e) => { $('genSyncError').textContent = e.message; $('genSyncError').style.display = 'block'; });
 }
 
 async function showTranscript() {
@@ -862,6 +863,11 @@ function renderSettings(data) {
     label.htmlFor = input.id; label.append(title, input);
     const status = document.createElement('small'); status.textContent = secret.source === 'environment' ? 'Managed by your environment' : secret.configured ? 'Configured' : 'Optional until you use this integration'; label.append(status);
     credentials.append(label);
+    if (secret.key === 'GRANOLA_API_KEY') {
+      const help = document.createElement('small');
+      help.textContent = 'Use a key with Personal notes access. Save settings, then open Generate → Sync Granola to import notes from the past 30 days.';
+      label.append(help);
+    }
     if (secret.configured && secret.source !== 'environment') {
       const clear = document.createElement('label'); clear.className = 'settings-field check';
       const check = document.createElement('input'); check.type = 'checkbox'; check.id = 'clear-' + secret.key;

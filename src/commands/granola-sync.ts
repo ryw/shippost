@@ -1,3 +1,4 @@
+import { syncGranolaAPI } from '../services/granola-api.js';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { basename, join } from 'path';
 import { homedir } from 'os';
@@ -220,6 +221,10 @@ export async function granolaSyncCommand(options: GranolaSyncOptions): Promise<v
     }
 
     logger.section('Granola Sync');
+    if (process.env.GRANOLA_API_KEY) {
+      await syncGranolaAPI(cwd, process.env.GRANOLA_API_KEY, line => logger.info(line), options);
+      return;
+    }
 
     // Load Granola data
     logger.step('Loading Granola credentials...');
