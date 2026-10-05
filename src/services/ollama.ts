@@ -16,6 +16,7 @@ export class OllamaService implements LLMService {
 
     this.client = new Ollama({
       host: config.ollama.host,
+      fetch: (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(config.ollama?.timeout ?? 60000) }),
     });
   }
 
@@ -73,6 +74,6 @@ export class OllamaService implements LLMService {
   }
 
   getTemperature(): number {
-    return this.config.generation.temperature || 0.7;
+    return this.config.generation.temperature ?? 0.7;
   }
 }

@@ -83,7 +83,7 @@ export class AnthropicService implements LLMService {
         max_tokens: this.config.anthropic?.maxTokens || 4096,
         // Fable 5 and Opus 4.7+ reject sampling params (400)
         ...(this.supportsTemperature()
-          ? { temperature: this.config.generation.temperature || 0.7 }
+          ? { temperature: this.config.generation.temperature ?? 0.7 }
           : {}),
         messages: [
           {
@@ -113,7 +113,7 @@ export class AnthropicService implements LLMService {
   }
 
   getTemperature(): number {
-    return this.config.generation.temperature || 0.7;
+    return this.config.generation.temperature ?? 0.7;
   }
 
   supportsTemperature(): boolean {

@@ -4,13 +4,12 @@ import { readFileSync, existsSync, readdirSync, statSync } from 'fs';
 import { join, basename } from 'path';
 import { FileSystemService } from '../../services/file-system.js';
 import { TypefullyService } from '../../services/typefully.js';
-import { AnthropicService } from '../../services/anthropic.js';
+import type { LLMService } from '../../services/llm-service.js';
 import { XAuthService } from '../../services/x-auth.js';
 import { XApiService, RateLimitError } from '../../services/x-api.js';
 import { createLLMService } from '../../services/llm-factory.js';
 import { logger } from '../../utils/logger.js';
 import { isShippostProject } from '../../utils/validation.js';
-import { NotInitializedError } from '../../utils/errors.js';
 import { isGenerationTarget, type GenerationTarget } from '../../types/state.js';
 import type { Post } from '../../types/post.js';
 import {
@@ -41,6 +40,8 @@ import {
   refreshAccessToken,
   fetchGranolaDocuments,
 } from '../granola-sync.js';
+import { randomUUID } from 'crypto';
+import { getSettings, saveSettings } from '../../services/settings.js';
 import { PAGE } from './page.js';
 import { isRecord, parseJsonFromResponse } from '../../utils/json-parser.js';
 
@@ -107,7 +108,7 @@ export async function uiCommand(options: UiOptions): Promise<void> {
   const fs = new FileSystemService(cwd);
   let typefully: TypefullyService | null = null;
   let stagingApproved = false;
-  let anthropic: AnthropicService | null = null;
+  let rewriteLLM: LLMService | null = null;
   const jobs: Record<string, Job> = {};
   const genQueue: Array<{ file: string; target: GenerationTarget }> = [];
   let genActive: string | null = null;
@@ -218,15 +219,12 @@ export async function uiCommand(options: UiOptions): Promise<void> {
   };
 
   try {
-    if (!isShippostProject(cwd)) {
-      throw new NotInitializedError();
-    }
-    const config = fs.loadConfig();
+    const settingsToken = randomUUID();
     const port = options.port || 4747;
 
     const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
       const send = (status: number, body: string, type = 'application/json') => {
-        res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store' });
+        res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'same-origin' });
         res.end(body);
       };
       const readBody = async (): Promise<Record<string, unknown>> => {
@@ -238,7 +236,35 @@ export async function uiCommand(options: UiOptions): Promise<void> {
       const route = `${req.method} ${url.pathname}`;
 
       try {
-        if (route === 'GET /') return send(200, PAGE, 'text/html');
+        // Local-only settings must not be readable via DNS rebinding or cross-origin requests.
+        const hosts = [`127.0.0.1:${port}`, `localhost:${port}`];
+        if (!hosts.includes(req.headers.host || '') || (req.headers.origin && !hosts.some(host => req.headers.origin === `http://${host}`))) {
+          return send(403, JSON.stringify({ error: 'Local same-origin access required' }));
+        }
+        if (route === 'GET /') return send(200, PAGE.replace('__SHIPPOST_SETTINGS_TOKEN__', settingsToken), 'text/html');
+        if (route === 'GET /api/settings') return send(200, JSON.stringify(getSettings(cwd)));
+        if (route === 'POST /api/settings' || route === 'POST /api/settings/test') {
+          if (req.headers['x-settings-token'] !== settingsToken) return send(403, JSON.stringify({ error: 'Reload the page before changing settings' }));
+          if (stagingApproved || Object.values(jobs).some(job => job.running)) return send(409, JSON.stringify({ error: 'Wait for running jobs to finish before changing or testing settings' }));
+          if (route === 'POST /api/settings/test') {
+            try {
+              await createLLMService(fs.loadConfig()).ensureAvailable();
+              return send(200, JSON.stringify({ ok: true }));
+            } catch {
+              return send(400, JSON.stringify({ error: 'Could not connect. Check the saved provider, server URL, model, and API key.' }));
+            }
+          }
+          try {
+            saveSettings(cwd, await readBody());
+            typefully = null;
+            rewriteLLM = null;
+            return send(200, JSON.stringify(getSettings(cwd)));
+          } catch (error) {
+            return send(400, JSON.stringify({ error: error instanceof SyntaxError ? 'Invalid settings JSON' : (error as Error).message }));
+          }
+        }
+        if (!isShippostProject(cwd)) return send(409, JSON.stringify({ error: 'Open Settings to finish workspace setup' }));
+        const config = fs.loadConfig();
 
         // ── jobs ─────────────────────────────────────────────────────
         if (req.method === 'GET' && url.pathname.startsWith('/api/job/')) {
@@ -332,7 +358,7 @@ export async function uiCommand(options: UiOptions): Promise<void> {
           if (typeof content !== 'string' || typeof instruction !== 'string' || !(end > start)) {
             return send(400, JSON.stringify({ error: 'need content, selection range, instruction' }));
           }
-          if (!anthropic) anthropic = new AnthropicService(config);
+          if (!rewriteLLM) rewriteLLM = createLLMService(config);
           let style = '';
           try {
             style = readFileSync(join(cwd, 'prompts', 'style.md'), 'utf-8');
@@ -346,7 +372,7 @@ export async function uiCommand(options: UiOptions): Promise<void> {
             `Instruction: ${instruction}`,
             `Rewrite ONLY the selected span per the instruction, matching the surrounding voice. Never use em dashes. Return ONLY the replacement text for the span — no quotes around it, no preamble, no explanation.`,
           ].filter(Boolean).join('\n\n');
-          let replacement = (await anthropic.generate(prompt)).trim();
+          let replacement = (await rewriteLLM.generate(prompt)).trim();
           replacement = replacement.replace(/^(Here('|’)s.*?:|Replacement:)\s*/i, '').trim();
           if (replacement.length >= 2 && replacement.startsWith('"') && replacement.endsWith('"') && !selection.startsWith('"')) {
             replacement = replacement.slice(1, -1);
@@ -818,7 +844,7 @@ export async function uiCommand(options: UiOptions): Promise<void> {
       logger.success(`ship ui running at ${url}`);
       logger.info('  Review • Generate • Reply • Stats • Unfollow — Ctrl-C here when done');
       const pending = Object.keys(loadPendingUnfollows(cwd)).length;
-      if (pending > 0) {
+      if (pending > 0 && isShippostProject(cwd)) {
         logger.info(`  ${pending} pending unfollow decision${pending === 1 ? '' : 's'} — retrying`);
         runUnfollowWorker();
       }

@@ -745,7 +745,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
   const contentAnalyzer = analysisTemplate ? new ContentAnalyzer(llm, analysisTemplate) : null;
   const strategySelector = new StrategySelector(
     userStrategies,
-    config.generation.strategies?.diversityWeight || 0.7
+    config.generation.strategies?.diversityWeight ?? 0.7
   );
 
   // Determine strategy configuration
@@ -871,7 +871,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
             }
           } else {
             // Auto-select strategies based on content analysis
-            if (contentAnalyzer) {
+            if (contentAnalyzer && config.generation.strategies?.autoSelect !== false) {
               if (options.verbose) {
                 logger.info('  Analyzing content...');
               }
