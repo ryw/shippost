@@ -1,6 +1,4 @@
 // Single-page client for `ship ui`. Served inline — no build step, no deps.
-// Client JS uses string concatenation (not template literals) because this
-// whole page lives inside a TS template literal.
 export const PAGE = `<!doctype html>
 <html lang="en">
 <head>
@@ -89,6 +87,18 @@ export const PAGE = `<!doctype html>
   #settingsStatus { flex-basis: 100%; margin: 0; overflow-wrap: anywhere; }
   #settingsStatus:empty { display: none; }
   input[type=checkbox] { accent-color: var(--accent); width: 15px; height: 15px; }
+  #genCard { padding: 32px; }
+  #genCard h1 { font: 30px/1.2 Georgia, serif; letter-spacing: -.6px; margin: 0 0 18px; overflow-wrap: anywhere; }
+  #genCard .meta { margin-bottom: 12px; }
+  #genSummary { color: var(--muted); margin: 0 0 24px; line-height: 1.65; }
+  #genSummary:empty { display: none; }
+  #genDetails { border-top: 1px solid var(--line); padding-top: 16px; }
+  #genDetails summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+  #genText { max-height: 360px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 16px; }
+  #genCard .actions { margin-top: 28px; }
+  .gen-outputs { font-size: 12px; color: var(--muted); margin: 12px 0 0; }
+  #genSync { margin-left: auto; }
+  @media (max-width: 480px) { #genCard { padding: 22px; } #genCard h1 { font-size: 26px; } }
 </style>
 </head>
 <body>
@@ -137,28 +147,26 @@ export const PAGE = `<!doctype html>
 
   <section class="view" id="view-generate">
     <div class="toolbar">
-      <label for="genRange">Meetings</label>
-      <select id="genRange" class="ghost"><option value="last_30_days">Past 30 days</option><option value="all">All dates</option></select>
+      <select aria-label="Meeting date range" id="genRange" class="ghost"><option value="last_30_days">Past 30 days</option><option value="all">All dates</option></select>
       <button class="ghost" id="genSync">Sync Granola</button>
     </div>
     <p id="genSyncError" role="alert" style="display:none"></p>
-    <p id="genRangeNote" style="color:var(--muted);font-size:13px"></p>
-    <p id="genTargetNote" style="color:var(--muted);font-size:13px">Generate social posts, blog drafts, and article revision proposals together. Completed outputs are skipped on retry.</p>
     <div class="toolbar" id="genStatus" style="display:none">
       <span class="dim" id="genStatusText" style="color:var(--muted);font-size:13px"></span>
     </div>
     <div class="card" id="genCard" style="display:none">
-      <div class="meta">
-        <span class="badge" id="genName"></span>
-        <span id="genWho"></span>
-        <span id="chars-gen" style="margin-left:auto" class="dim"></span>
-      </div>
-      <div id="genSummary" style="font-style:italic;color:var(--muted);margin-bottom:12px"></div>
-      <div id="genText" class="serif" style="max-height:340px;overflow-y:auto;white-space:pre-wrap;border-top:1px solid var(--line);padding-top:12px"></div>
+      <div class="meta" id="genWho"></div>
+      <h1 id="genName"></h1>
+      <p id="genSummary"></p>
+      <details id="genDetails">
+        <summary>Meeting notes</summary>
+        <div id="genText" class="serif"></div>
+      </details>
       <div class="actions">
         <button class="primary" id="genProcess">Generate all 3</button>
         <button class="ghost" id="genSkip">Skip</button>
       </div>
+      <p class="gen-outputs">Social posts · Blog draft · Article revisions</p>
     </div>
     <div class="empty" id="genDone" style="display:none">No transcripts waiting. 🎉</div>
     <pre class="log" id="genLog" style="display:none"></pre>
@@ -459,8 +467,7 @@ let gqueue = [], gpolling = false;
 
 function generateRange() { return $('genRange').value; }
 function updateRangeNote(data) {
-  $('genRangeNote').textContent = data.range === 'all' ? 'Showing all meeting dates, including undated sources.' : 'Past 30 days by meeting date (UTC).' + (data.outsideRange ? ' ' + data.outsideRange + ' older, future, or undated sources hidden.' : '');
-  $('genDone').textContent = data.range !== 'all' && !data.matchingFiles ? 'No meetings from the past 30 days have been imported. Import recent meetings to begin.' : 'No unprocessed transcripts in this date range.';
+  $('genDone').textContent = data.range !== 'all' && !data.matchingFiles ? 'No recent meetings. Sync Granola to start.' : 'All caught up.';
 }
 
 function generateTarget() { return 'all'; }
@@ -529,6 +536,11 @@ function syncGranola() {
   }).catch((e) => { $('genSyncError').textContent = e.message; $('genSyncError').style.display = 'block'; });
 }
 
+function shortSummary(text) {
+  const plain = text.replace(/[#*_]/g, '').replace(/\\s+/g, ' ').trim();
+  return plain.length > 220 ? plain.slice(0, 217).replace(/\\s+\\S*$/, '') + '…' : plain;
+}
+
 async function showTranscript() {
   const t = gqueue[0];
   if (activeTab === 'generate') $('progress').textContent = t ? gqueue.length + ' waiting' : '';
@@ -539,18 +551,22 @@ async function showTranscript() {
   }
   $('genCard').style.display = 'block';
   $('genDone').style.display = 'none';
-  $('genName').textContent = t.name.replace(/\\.(txt|md)$/, '');
-  $('genWho').textContent = (t.meetingDate ? t.meetingDate + ' · ' : '') + (t.attendees.length ? 'with ' + t.attendees.join(', ') : '');
-  $('chars-gen').textContent = fmtN(t.size) + 'b';
-  $('genSummary').textContent = t.summary || '…';
+  $('genName').textContent = t.name.replace(/\\.(txt|md)$/, '').replace(/^\\d{4}-\\d{2}-\\d{2}[_ -]*/, '').replace(/_/g, ' ');
+  $('genWho').textContent = (t.meetingDate ? t.meetingDate + ' · ' : '') + (t.attendees.length ? t.attendees.slice(0, 2).join(', ') + (t.attendees.length > 2 ? ' +' + (t.attendees.length - 2) : '') : '');
+  $('genDetails').open = false;
+  $('genSummary').textContent = shortSummary(t.summary || '');
   $('genText').textContent = '';
   if (!t.summary) {
     api('POST', '/api/transcripts/summary', { name: t.name })
-      .then((r) => { if (gqueue[0] === t) { t.summary = r.summary; $('genSummary').textContent = r.summary; } })
+      .then((r) => { if (gqueue[0] === t) { t.summary = r.summary; $('genSummary').textContent = shortSummary(r.summary); } })
       .catch(() => { if (gqueue[0] === t) $('genSummary').textContent = ''; });
   }
   api('GET', '/api/transcripts/content?name=' + encodeURIComponent(t.name))
-    .then((r) => { if (gqueue[0] === t) $('genText').textContent = r.content; })
+    .then((r) => { if (gqueue[0] === t) {
+      $('genText').textContent = r.content;
+      const title = r.content.match(/^# (.+)/);
+      if (title) $('genName').textContent = title[1];
+    } })
     .catch(() => {});
 }
 
