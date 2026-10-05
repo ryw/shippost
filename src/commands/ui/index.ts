@@ -42,6 +42,7 @@ import {
 } from '../granola-sync.js';
 import { randomUUID } from 'crypto';
 import { getSettings, saveSettings } from '../../services/settings.js';
+import { transcriptDate, inLast30Days } from '../../utils/transcript-date.js';
 import { PAGE } from './page.js';
 import { isRecord, parseJsonFromResponse } from '../../utils/json-parser.js';
 
@@ -86,7 +87,7 @@ function isRelevanceScoreResults(value: unknown): value is RelevanceScoreResult[
 }
 
 interface TranscriptMeta {
-  [filename: string]: { attendees?: string[]; summary?: string; skipped?: boolean; skippedTargets?: Partial<Record<GenerationTarget, boolean>> };
+  [filename: string]: { attendees?: string[]; summary?: string; meetingDate?: string; skipped?: boolean; skippedTargets?: Partial<Record<GenerationTarget, boolean>> };
 }
 
 interface UiOptions {
@@ -384,6 +385,9 @@ export async function uiCommand(options: UiOptions): Promise<void> {
         if (route === 'GET /api/transcripts') {
           const target = url.searchParams.get('target') || 'social';
           if (!isGenerationTarget(target)) return send(400, JSON.stringify({ error: 'invalid target' }));
+          const range = url.searchParams.get('range') || 'last_30_days';
+          if (range !== 'last_30_days' && range !== 'all') return send(400, JSON.stringify({ error: 'invalid date range' }));
+          const now = new Date();
           const inputDir = join(cwd, 'input');
           const state = fs.loadState();
           const files = existsSync(inputDir)
@@ -391,7 +395,8 @@ export async function uiCommand(options: UiOptions): Promise<void> {
             : [];
           const attendees = await granolaAttendees();
           const meta = loadMeta();
-          const unprocessed = files
+          const recentFiles = files.filter(f => inLast30Days(transcriptDate(f, meta[f]?.meetingDate), now));
+          const unprocessed = (range === 'all' ? files : recentFiles)
             .filter((f) => !fs.isFileProcessed(join(inputDir, f), state, target))
             .filter((f) => !meta[f]?.skipped && !meta[f]?.skippedTargets?.[target])
             .filter((f) => f !== genActive && !genQueue.some((item) => item.file === f))
@@ -401,11 +406,12 @@ export async function uiCommand(options: UiOptions): Promise<void> {
                 name: f,
                 size: st.size,
                 modified: st.mtime.toISOString(),
+                meetingDate: transcriptDate(f, meta[f]?.meetingDate) || null,
                 attendees: attendees[f] || meta[f]?.attendees || [],
                 summary: meta[f]?.summary || null,
               };
             })
-            .sort((a, b) => b.name.localeCompare(a.name));
+            .sort((a, b) => (b.meetingDate || '').localeCompare(a.meetingDate || '') || b.name.localeCompare(a.name));
           // Persist attendees so they survive Granola auth hiccups
           let dirty = false;
           for (const t of unprocessed) {
@@ -415,7 +421,7 @@ export async function uiCommand(options: UiOptions): Promise<void> {
             }
           }
           if (dirty) await saveMeta(meta);
-          return send(200, JSON.stringify({ transcripts: unprocessed }));
+          return send(200, JSON.stringify({ transcripts: unprocessed, range, matchingFiles: range === 'all' ? files.length : recentFiles.length, outsideRange: range === 'all' ? 0 : files.length - recentFiles.length }));
         }
 
         if (req.method === 'GET' && url.pathname === '/api/transcripts/content') {

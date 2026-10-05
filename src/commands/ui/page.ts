@@ -143,8 +143,11 @@ export const PAGE = `<!doctype html>
         <option value="blog">Blog drafts</option>
         <option value="revisions">Article revision proposals</option>
       </select>
+      <label for="genRange">Meetings</label>
+      <select id="genRange" class="ghost"><option value="last_30_days">Past 30 days</option><option value="all">All dates</option></select>
       <button class="ghost" id="genSync">Sync Granola</button>
     </div>
+    <p id="genRangeNote" style="color:var(--muted);font-size:13px"></p>
     <p id="genTargetNote" style="color:var(--muted);font-size:13px">Social posts go to Review for approval.</p>
     <div class="toolbar" id="genStatus" style="display:none">
       <span class="dim" id="genStatusText" style="color:var(--muted);font-size:13px"></span>
@@ -459,12 +462,20 @@ $('content').addEventListener('input', () => {
 // ── generate ──────────────────────────────────────────────────────────
 let gqueue = [], gpolling = false;
 
+function generateRange() { return $('genRange').value; }
+function updateRangeNote(data) {
+  $('genRangeNote').textContent = data.range === 'all' ? 'Showing all meeting dates, including undated sources.' : 'Past 30 days by meeting date (UTC).' + (data.outsideRange ? ' ' + data.outsideRange + ' older, future, or undated sources hidden.' : '');
+  $('genDone').textContent = data.range !== 'all' && !data.matchingFiles ? 'No meetings from the past 30 days have been imported. Import recent meetings to begin.' : 'No unprocessed transcripts in this date range.';
+}
+
 function generateTarget() { return $('genTarget').value; }
 
 async function refreshTranscripts() {
   const target = generateTarget();
-  const d = await api('GET', '/api/transcripts?target=' + target);
-  if (target !== generateTarget()) return;
+  const range = generateRange();
+  const d = await api('GET', '/api/transcripts?target=' + target + '&range=' + range);
+  if (target !== generateTarget() || range !== generateRange()) return;
+  updateRangeNote(d);
   gqueue = d.transcripts;
   showTranscript();
 }
@@ -479,6 +490,11 @@ function initGenerate() {
       blog: 'Creates blog drafts for review. Existing articles remain unchanged.',
       revisions: 'Saves proposed changes in .shippost-revisions/ for manual review and application.'
     }[generateTarget()];
+    refreshTranscripts().catch((e) => toast('⚠️ ' + e.message));
+  };
+  $('genRange').onchange = () => {
+    gqueue = [];
+    showTranscript();
     refreshTranscripts().catch((e) => toast('⚠️ ' + e.message));
   };
   $('genProcess').onclick = processTranscript;
@@ -505,8 +521,10 @@ function syncGranola() {
       if (j.error) { toast('⚠️ Granola sync: ' + j.error); return; }
       const cur = gqueue[0] && gqueue[0].name;
       const target = generateTarget();
-      const d = await api('GET', '/api/transcripts?target=' + target);
-      if (target !== generateTarget()) return;
+      const range = generateRange();
+      const d = await api('GET', '/api/transcripts?target=' + target + '&range=' + range);
+      if (target !== generateTarget() || range !== generateRange()) return;
+      updateRangeNote(d);
       const fresh = d.transcripts.length - gqueue.length;
       gqueue = d.transcripts;
       // Keep whatever Ry is reading at the front of the queue
@@ -531,7 +549,7 @@ async function showTranscript() {
   $('genCard').style.display = 'block';
   $('genDone').style.display = 'none';
   $('genName').textContent = t.name.replace(/\\.(txt|md)$/, '');
-  $('genWho').textContent = t.attendees.length ? 'with ' + t.attendees.join(', ') : '';
+  $('genWho').textContent = (t.meetingDate ? t.meetingDate + ' · ' : '') + (t.attendees.length ? 'with ' + t.attendees.join(', ') : '');
   $('chars-gen').textContent = fmtN(t.size) + 'b';
   $('genSummary').textContent = t.summary || '…';
   $('genText').textContent = '';
