@@ -20,7 +20,7 @@ export class TypefullyService {
       );
     }
     this.apiKey = apiKey;
-    this.socialSetId = socialSetId || '1';
+    this.socialSetId = socialSetId || process.env.TYPEFULLY_SOCIAL_SET_ID || '1';
     if (!/^[A-Za-z0-9_-]+$/.test(this.socialSetId)) {
       throw new Error('Invalid Typefully social set id');
     }

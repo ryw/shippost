@@ -105,6 +105,7 @@ export async function uiCommand(options: UiOptions): Promise<void> {
   const cwd = process.cwd();
   const fs = new FileSystemService(cwd);
   let typefully: TypefullyService | null = null;
+  let stagingApproved = false;
   let anthropic: AnthropicService | null = null;
   const jobs: Record<string, Job> = {};
   const genQueue: string[] = [];
@@ -262,26 +263,65 @@ export async function uiCommand(options: UiOptions): Promise<void> {
           return send(200, JSON.stringify({ posts: queue }));
         }
 
+        if (route === 'GET /api/approved-posts') {
+          const posts = fs.readPosts().filter((p) => p.status === 'approved');
+          const queue = posts.map((p) => ({
+            id: p.id,
+            platform: p.platform || 'x',
+            score: p.metadata.bangerScore || 0,
+            sourceFile: p.sourceFile,
+            content: p.content,
+          }));
+          return send(200, JSON.stringify({ posts: queue }));
+        }
+
         if (route === 'POST /api/decision') {
           const { id, action, content } = await readBody();
           const post = fs.readPosts().find((p) => p.id === id);
           if (!post) return send(404, JSON.stringify({ error: 'post not found' }));
-          if (action !== 'stage' && action !== 'reject') {
-            return send(400, JSON.stringify({ error: 'action must be stage or reject' }));
+          if (action !== 'approve' && action !== 'reject') {
+            return send(400, JSON.stringify({ error: 'action must be approve or reject' }));
+          }
+          if (post.status !== 'new' && post.status !== 'keep') {
+            return send(409, JSON.stringify({ error: 'post has already been reviewed' }));
           }
           const finalContent = typeof content === 'string' && content.trim() ? content : post.content;
-          let shareUrl: string | undefined;
-          if (action === 'stage') {
-            if (!typefully) typefully = new TypefullyService(config.typefully?.socialSetId);
-            const draft = await typefully.createDraft(finalContent, post.platform || 'x');
-            post.metadata.typefullyDraftId = draft.id;
-            shareUrl = draft.share_url;
-          }
           post.content = finalContent;
-          post.status = action === 'stage' ? 'staged' : 'rejected';
+          post.status = action === 'approve' ? 'approved' : 'rejected';
           fs.updatePost(post.id, () => post);
-          logger.info(`${action === 'stage' ? 'Staged' : 'Rejected'}: ${finalContent.slice(0, 60).replace(/\n/g, ' ')}…`);
-          return send(200, JSON.stringify({ ok: true, share_url: shareUrl }));
+          logger.info(`${action === 'approve' ? 'Approved' : 'Rejected'}: ${finalContent.slice(0, 60).replace(/\n/g, ' ')}…`);
+          return send(200, JSON.stringify({ ok: true }));
+        }
+
+        if (route === 'POST /api/stage-approved') {
+          if (stagingApproved) {
+            return send(409, JSON.stringify({ error: 'staging is already in progress' }));
+          }
+          stagingApproved = true;
+          try {
+            const approved = fs.readPosts().filter((p) => p.status === 'approved');
+            const post = approved[0];
+            if (!post) return send(404, JSON.stringify({ error: 'no approved posts to stage' }));
+            if (!typefully) typefully = new TypefullyService(config.typefully?.socialSetId);
+            const draft = await typefully.createDraft(post.content, post.platform || 'x');
+            post.metadata.typefullyDraftId = draft.id;
+            post.status = 'staged';
+            fs.updatePost(post.id, () => post);
+            logger.info(`Staged approved post: ${post.content.slice(0, 60).replace(/\n/g, ' ')}…`);
+            return send(200, JSON.stringify({
+              ok: true,
+              share_url: draft.share_url,
+              remaining: approved.length - 1,
+              post: {
+                id: post.id,
+                content: post.content,
+                platform: post.platform || 'x',
+                sourceFile: post.sourceFile,
+              },
+            }));
+          } finally {
+            stagingApproved = false;
+          }
         }
 
         if (route === 'POST /api/rewrite') {

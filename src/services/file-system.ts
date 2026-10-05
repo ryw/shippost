@@ -40,6 +40,34 @@ function releaseLock(lockPath: string): void {
   try { rmdirSync(lockPath); } catch {}
 }
 
+function applyEnvOverrides(config: T2pConfig): T2pConfig {
+  const next: T2pConfig = {
+    ...config,
+    llm: { ...config.llm },
+    ollama: config.ollama ? { ...config.ollama } : undefined,
+    anthropic: config.anthropic ? { ...config.anthropic } : undefined,
+    generation: {
+      ...config.generation,
+      strategies: config.generation.strategies ? { ...config.generation.strategies } : undefined,
+    },
+    x: config.x ? { ...config.x } : undefined,
+    typefully: config.typefully ? { ...config.typefully } : undefined,
+    blog: config.blog ? { ...config.blog } : undefined,
+  };
+
+  if (process.env.SHIPPOST_X_CLIENT_ID) {
+    next.x = { ...next.x, clientId: process.env.SHIPPOST_X_CLIENT_ID };
+  }
+  if (process.env.SHIPPOST_X_API_TIER === 'free' || process.env.SHIPPOST_X_API_TIER === 'basic') {
+    next.x = { ...next.x, apiTier: process.env.SHIPPOST_X_API_TIER };
+  }
+  if (process.env.TYPEFULLY_SOCIAL_SET_ID) {
+    next.typefully = { ...next.typefully, socialSetId: process.env.TYPEFULLY_SOCIAL_SET_ID };
+  }
+
+  return next;
+}
+
 export class FileSystemService {
   private cwd: string;
 
@@ -74,7 +102,26 @@ export class FileSystemService {
         };
       }
 
-      return { ...DEFAULT_CONFIG, ...migratedConfig };
+      const mergedConfig: T2pConfig = {
+        ...DEFAULT_CONFIG,
+        ...migratedConfig,
+        llm: { ...DEFAULT_CONFIG.llm, ...migratedConfig.llm },
+        ollama: { ...DEFAULT_CONFIG.ollama, ...migratedConfig.ollama },
+        anthropic: { ...DEFAULT_CONFIG.anthropic, ...migratedConfig.anthropic },
+        generation: {
+          ...DEFAULT_CONFIG.generation,
+          ...migratedConfig.generation,
+          strategies: {
+            ...DEFAULT_CONFIG.generation.strategies,
+            ...migratedConfig.generation?.strategies,
+          },
+        },
+        x: migratedConfig.x ? { ...migratedConfig.x } : undefined,
+        typefully: migratedConfig.typefully ? { ...migratedConfig.typefully } : undefined,
+        blog: migratedConfig.blog ? { ...migratedConfig.blog } : undefined,
+      };
+
+      return applyEnvOverrides(mergedConfig);
     } catch (error) {
       if (error instanceof NotInitializedError || error instanceof ConfigError) {
         throw error;
