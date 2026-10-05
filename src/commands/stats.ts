@@ -1,3 +1,4 @@
+import { assertXEnabled } from '../services/x-access.js';
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { FileSystemService } from '../services/file-system.js';
@@ -302,6 +303,7 @@ export async function statsCommand(): Promise<void> {
 // Helper to get user metrics
 export async function getMeWithMetrics(accessToken: string): Promise<{ followers: number; following: number; tweets: number } | null> {
   try {
+    assertXEnabled();
     const { TwitterApi } = await import('twitter-api-v2');
     const client = new TwitterApi(accessToken);
     const result = await client.v2.me({ 'user.fields': ['public_metrics'] });
@@ -320,6 +322,7 @@ export async function getMeWithMetrics(accessToken: string): Promise<{ followers
 // Helper to get tweets with full metrics (paginates to get up to `count` tweets)
 export async function getRecentTweetsWithMetrics(accessToken: string, userId: string, count: number): Promise<TweetWithMetrics[]> {
   try {
+    assertXEnabled();
     const { TwitterApi } = await import('twitter-api-v2');
     const client = new TwitterApi(accessToken);
 

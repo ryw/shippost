@@ -28,6 +28,7 @@ export const SETTINGS_FIELDS: Field[] = [
   { key: 'generation.strategies.diversityWeight', label: 'Strategy diversity', group: 'Strategies', type: 'number', min: 0, max: 1 },
   { key: 'generation.strategies.preferThreadFriendly', label: 'Prefer thread-friendly strategies', group: 'Strategies', type: 'checkbox' },
   { key: 'typefully.socialSetId', label: 'Social set ID', group: 'Typefully', type: 'text', env: 'TYPEFULLY_SOCIAL_SET_ID' },
+  { key: 'x.enabled', label: 'Enable X API access', group: 'X', type: 'checkbox' },
   { key: 'x.clientId', label: 'Client ID', group: 'X', type: 'text', env: 'SHIPPOST_X_CLIENT_ID' },
   { key: 'x.apiTier', label: 'API tier', group: 'X', type: 'select', options: ['free', 'basic'], env: 'SHIPPOST_X_API_TIER' },
   { key: 'blog.outputDir', label: 'Draft output directory', group: 'Blog', type: 'text' },
@@ -64,7 +65,7 @@ export function getSettings(cwd: string) {
   loadWorkspaceSecrets(cwd);
   const raw = rawConfig(cwd);
   const config = existsSync(join(cwd, '.shippostrc.json')) ? new FileSystemService(cwd).loadConfig() : DEFAULT_CONFIG;
-  const defaults: Record<string, unknown> = { 'x.apiTier': 'free', 'typefully.socialSetId': '1', 'blog.outputDir': 'src/content/drafts', 'blog.imageDir': 'public/images/posts', 'blog.imagePathPrefix': '/images/posts' };
+  const defaults: Record<string, unknown> = { 'x.enabled': true, 'x.apiTier': 'free', 'typefully.socialSetId': '1', 'blog.outputDir': 'src/content/drafts', 'blog.imageDir': 'public/images/posts', 'blog.imagePathPrefix': '/images/posts' };
   return {
     initialized: isShippostProject(cwd),
     anthropicModels: ANTHROPIC_MODELS,

@@ -29,6 +29,7 @@ export interface T2pConfig {
     };
   };
   x?: {
+    enabled?: boolean;
     clientId?: string;
     apiTier?: XApiTier;
   };
