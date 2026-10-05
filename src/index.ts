@@ -43,7 +43,9 @@ program
 
 program
   .command('work')
-  .description('Process input files and generate social media posts')
+  .description('Generate social posts, blog drafts, or proposed article revisions')
+  .option('--target <target>', 'Output: social, blog, or revisions', 'social')
+  .option('--sync', 'Sync Granola before generation (otherwise use local inputs)')
   .option('-m, --model <model>', 'Override Ollama model')
   .option('-v, --verbose', 'Verbose output')
   .option('-f, --force', 'Force reprocessing of all files (bypass tracking)')

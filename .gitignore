@@ -42,3 +42,5 @@ coverage/
 
 # Hippo memory tool
 .hippo/
+
+.shippost-revisions/

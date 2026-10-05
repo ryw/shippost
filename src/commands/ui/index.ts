@@ -11,6 +11,7 @@ import { createLLMService } from '../../services/llm-factory.js';
 import { logger } from '../../utils/logger.js';
 import { isShippostProject } from '../../utils/validation.js';
 import { NotInitializedError } from '../../utils/errors.js';
+import { isGenerationTarget, type GenerationTarget } from '../../types/state.js';
 import type { Post } from '../../types/post.js';
 import {
   gatherReplyTweets,
@@ -84,7 +85,7 @@ function isRelevanceScoreResults(value: unknown): value is RelevanceScoreResult[
 }
 
 interface TranscriptMeta {
-  [filename: string]: { attendees?: string[]; summary?: string; skipped?: boolean };
+  [filename: string]: { attendees?: string[]; summary?: string; skipped?: boolean; skippedTargets?: Partial<Record<GenerationTarget, boolean>> };
 }
 
 interface UiOptions {
@@ -108,7 +109,7 @@ export async function uiCommand(options: UiOptions): Promise<void> {
   let stagingApproved = false;
   let anthropic: AnthropicService | null = null;
   const jobs: Record<string, Job> = {};
-  const genQueue: string[] = [];
+  const genQueue: Array<{ file: string; target: GenerationTarget }> = [];
   let genActive: string | null = null;
 
   // Drain the durable pending-unfollow ledger; cap/rate-limit hits leave the
@@ -355,6 +356,8 @@ export async function uiCommand(options: UiOptions): Promise<void> {
 
         // ── generate ─────────────────────────────────────────────────
         if (route === 'GET /api/transcripts') {
+          const target = url.searchParams.get('target') || 'social';
+          if (!isGenerationTarget(target)) return send(400, JSON.stringify({ error: 'invalid target' }));
           const inputDir = join(cwd, 'input');
           const state = fs.loadState();
           const files = existsSync(inputDir)
@@ -363,9 +366,9 @@ export async function uiCommand(options: UiOptions): Promise<void> {
           const attendees = await granolaAttendees();
           const meta = loadMeta();
           const unprocessed = files
-            .filter((f) => !fs.isFileProcessed(join(inputDir, f), state))
-            .filter((f) => !loadMeta()[f]?.skipped)
-            .filter((f) => f !== genActive && !genQueue.includes(f))
+            .filter((f) => !fs.isFileProcessed(join(inputDir, f), state, target))
+            .filter((f) => !meta[f]?.skipped && !meta[f]?.skippedTargets?.[target])
+            .filter((f) => f !== genActive && !genQueue.some((item) => item.file === f))
             .map((f) => {
               const st = statSync(join(inputDir, f));
               return {
@@ -397,10 +400,11 @@ export async function uiCommand(options: UiOptions): Promise<void> {
         }
 
         if (route === 'POST /api/transcripts/skip') {
-          const { name } = await readBody() as { name: string };
+          const { name, target = 'social' } = await readBody();
+          if (!isGenerationTarget(target)) return send(400, JSON.stringify({ error: 'invalid target' }));
           const key = basename(String(name));
           const meta = loadMeta();
-          meta[key] = { ...meta[key], skipped: true };
+          meta[key] = { ...meta[key], skippedTargets: { ...meta[key]?.skippedTargets, [target]: true } };
           await saveMeta(meta);
           return send(200, JSON.stringify({ ok: true }));
         }
@@ -444,7 +448,8 @@ export async function uiCommand(options: UiOptions): Promise<void> {
         }
 
         if (route === 'POST /api/generate') {
-          const { files } = await readBody() as { files: string[] };
+          const { files, target = 'social' } = await readBody();
+          if (!isGenerationTarget(target)) return send(400, JSON.stringify({ error: 'invalid target' }));
           if (!Array.isArray(files) || files.length === 0) {
             return send(400, JSON.stringify({ error: 'no files selected' }));
           }
@@ -453,7 +458,7 @@ export async function uiCommand(options: UiOptions): Promise<void> {
           // or being worked by an orphaned pre-restart child process
           const { execSync } = await import('child_process');
           const accepted = requested.filter((f) => {
-            if (genQueue.includes(f) || genActive === f) return false;
+            if (genQueue.some((item) => item.file === f) || genActive === f) return false;
             try {
               execSync(`pgrep -f "work --all --files ${f.replace(/[^a-zA-Z0-9._-]/g, '')}"`, { stdio: 'pipe' });
               return false; // an orphaned run is already on it
@@ -462,16 +467,16 @@ export async function uiCommand(options: UiOptions): Promise<void> {
             }
           });
           if (accepted.length === 0) return send(409, JSON.stringify({ error: 'already processing' }));
-          genQueue.push(...accepted);
+          genQueue.push(...accepted.map((file) => ({ file, target })));
           startJob('generate', async (job) => {
-            let file: string | undefined;
+            let item: { file: string; target: GenerationTarget } | undefined;
             try {
-              while ((file = genQueue.shift())) {
-                const f = file;
+              while ((item = genQueue.shift())) {
+                const { file: f, target } = item;
                 genActive = f;
-                job.log.push(`▸ ${f}`);
+                job.log.push(`▸ ${target}: ${f}`);
                 await new Promise<void>((resolve, reject) => {
-                  const child = spawn(process.execPath, [process.argv[1], 'work', '--all', '--files', f], { cwd });
+                  const child = spawn(process.execPath, [process.argv[1], 'work', '--all', '--files', f, '--target', target], { cwd });
                   const onData = (chunk: Buffer) => {
                     stripAnsi(chunk.toString()).split('\n').forEach((line) => {
                       if (line.trim()) job.log.push(line.trimEnd());
@@ -483,6 +488,10 @@ export async function uiCommand(options: UiOptions): Promise<void> {
                   child.on('error', reject);
                 });
               }
+            } catch (error) {
+              // Return unstarted work to the selectable queue after a failure.
+              genQueue.length = 0;
+              throw error;
             } finally {
               genActive = null;
             }

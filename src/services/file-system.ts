@@ -3,7 +3,8 @@ import { join } from 'path';
 import { randomUUID } from 'crypto';
 import type { Post } from '../types/post.js';
 import type { T2pConfig } from '../types/config.js';
-import type { T2pState, ProcessedFileInfo } from '../types/state.js';
+import type { T2pState, GenerationTarget } from '../types/state.js';
+import { GENERATION_TARGETS } from '../types/state.js';
 import type { ContentStrategy } from '../types/strategy.js';
 import { DEFAULT_CONFIG } from '../types/config.js';
 import { FileSystemError, ConfigError, NotInitializedError } from '../utils/errors.js';
@@ -140,7 +141,7 @@ export class FileSystemService {
     }
   }
 
-  loadPrompt(filename: 'style.md' | 'work.md' | 'system.md' | 'analysis.md' | 'banger-eval.md' | 'content-analysis.md' | 'reply.md'): string {
+  loadPrompt(filename: 'style.md' | 'work.md' | 'system.md' | 'analysis.md' | 'banger-eval.md' | 'content-analysis.md' | 'reply.md' | 'blog-revision.md'): string {
     const promptPath = join(this.cwd, 'prompts', filename);
 
     if (!existsSync(promptPath)) {
@@ -317,14 +318,21 @@ export class FileSystemService {
     }
   }
 
-  isFileProcessed(filePath: string, state: T2pState): boolean {
-    return !!state.processedFiles[filePath];
+  isFileProcessed(filePath: string, state: T2pState, target: GenerationTarget = 'social'): boolean {
+    const entry = state.processedFiles[filePath];
+    // Old runs bundled all outputs. Preserve them rather than silently regenerate.
+    return !!entry && (!entry.targets || !!entry.targets[target]);
   }
 
-  markFileProcessed(filePath: string, postsGenerated: number, state: T2pState): T2pState {
+  markFileProcessed(filePath: string, postsGenerated: number, state: T2pState, target: GenerationTarget = 'social'): T2pState {
     try {
       const stats = statSync(filePath);
       const modifiedAt = stats.mtime.toISOString();
+      const previous = state.processedFiles[filePath];
+      const targets = previous && !previous.targets
+        ? Object.fromEntries(GENERATION_TARGETS.map((name) => [name, { processedAt: previous.processedAt, postsGenerated: previous.postsGenerated }]))
+        : previous?.targets || {};
+      const processedAt = new Date().toISOString();
 
       return {
         ...state,
@@ -332,7 +340,8 @@ export class FileSystemService {
           ...state.processedFiles,
           [filePath]: {
             path: filePath,
-            processedAt: new Date().toISOString(),
+            processedAt,
+            targets: { ...targets, [target]: { processedAt, postsGenerated } },
             modifiedAt,
             postsGenerated,
           },

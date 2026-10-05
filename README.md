@@ -154,9 +154,11 @@ ship work --no-strategies      # Legacy mode (no strategies)
 ```
 
 **Options:**
+- `--target <social|blog|revisions>` — Select output (default: social)
+- `--sync` — Explicitly sync Granola before generation
 - `-m, --model <model>` — Override the LLM model
 - `-v, --verbose` — Show detailed processing info
-- `-f, --force` — Force reprocessing of all files
+- `-f, --force` — Force reprocessing for the selected target
 - `-c, --count <n>` — Posts to generate per file (default: 8)
 - `-s, --strategy <id>` — Use specific strategy
 - `--strategies <ids>` — Multiple strategies (comma-separated)
@@ -173,7 +175,7 @@ ship work --no-strategies      # Legacy mode (no strategies)
 6. Scores each post for viral potential
 7. Saves to `posts.jsonl`
 
-> **Note:** File tracking in `.ship-state.json` prevents duplicate processing. Modified files are automatically reprocessed.
+> **Note:** Tracking in `.shippost-state.json` prevents repeated generation per source and target. Use `--force` to explicitly regenerate modified inputs.
 
 ---
 
@@ -800,3 +802,22 @@ Each post is scored 1-99 for viral potential:
 ## License
 
 MIT
+
+### Separate generation targets
+
+`ship work` now defaults to social posts only. It does not generate blog drafts, change articles, or sync Granola automatically. Existing flags such as `--files`, `--all`, `--count`, and strategy options still apply; `--count` controls social post generation.
+
+```bash
+ship work --target social --all --files meeting.txt
+ship work --target blog --all --files meeting.txt
+ship work --target revisions --all --files meeting.txt
+ship work --sync --target social  # explicitly sync Granola first
+```
+
+The Generate tab has the same target selector and a separate **Sync Granola** button. Switching targets shows sources still waiting for that target. Skipping a source affects only the selected target; old global skips remain respected.
+
+Completion is tracked per source and target in `.shippost-state.json`. Newly generated social posts do not prevent a later blog run. Existing records without target metadata are treated as completed for all targets to avoid silently regenerating historical content; use `--force --target blog --files meeting.txt` to explicitly rerun one target. A failed target stays retryable without rerunning other completed targets. Social strategy output is held until the full batch succeeds, so a model failure does not save a partial social batch. File writes and completion tracking are not a distributed transaction: inspect saved outputs after a process crash before forcing a retry.
+
+Blog runs create new drafts and use a fresh slug when a draft, article, or cover already exists. Revision runs save proposals in local `.shippost-revisions/`, with the original article path, its SHA-256 hash, and the source reference in a companion JSON file. Original articles remain unchanged. Review the proposal against the original, confirm the original hash still matches, then manually apply the chosen edits and run the site's checks before publication. There is no automatic apply/publish action. Repeated or interrupted revision runs may produce multiple proposals; review them before applying.
+
+Revision instructions live in `prompts/blog-revision.md`, created by `ship init`. For an existing workspace, copy `src/templates/blog-revision.md` from the Shippost checkout (or `dist/templates/blog-revision.md` from its package) into your workspace's `prompts/` directory and customize it.
