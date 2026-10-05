@@ -42,7 +42,7 @@ const GRANOLA_API_HEADERS = {
 export function loadGranolaRefreshToken(): string {
   const authPath = join(GRANOLA_DIR, 'supabase.json');
   if (!existsSync(authPath)) {
-    throw new Error('Granola credentials not found. Make sure the Granola app is installed and you are logged in.');
+    throw new Error('Granola desktop credentials are missing on this computer. Sync currently requires the Granola macOS app to be installed and signed in on the same computer running Shippost. Your LLM and Typefully keys do not authorize Granola.');
   }
 
   const authData = JSON.parse(readFileSync(authPath, 'utf-8'));

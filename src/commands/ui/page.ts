@@ -147,6 +147,7 @@ export const PAGE = `<!doctype html>
       <select id="genRange" class="ghost"><option value="last_30_days">Past 30 days</option><option value="all">All dates</option></select>
       <button class="ghost" id="genSync">Sync Granola</button>
     </div>
+    <p id="genSyncError" role="alert" style="display:none"></p>
     <p id="genRangeNote" style="color:var(--muted);font-size:13px"></p>
     <p id="genTargetNote" style="color:var(--muted);font-size:13px">Social posts go to Review for approval.</p>
     <div class="toolbar" id="genStatus" style="display:none">
@@ -506,6 +507,7 @@ function initGenerate() {
 // Pull new Granola transcripts on explicit request so fresh meetings show up
 // without a manual \`ship granola-sync\`.
 function syncGranola() {
+  $('genSyncError').style.display = 'none';
   api('POST', '/api/granola/sync').then(() => {
     const tick = async () => {
       const j = await api('GET', '/api/job/granola-sync');
@@ -518,7 +520,11 @@ function syncGranola() {
         return;
       }
       if (!gpolling) $('genStatus').style.display = 'none';
-      if (j.error) { toast('⚠️ Granola sync: ' + j.error); return; }
+      if (j.error) {
+        $('genSyncError').textContent = 'Granola sync failed: ' + j.error;
+        $('genSyncError').style.display = 'block';
+        return;
+      }
       const cur = gqueue[0] && gqueue[0].name;
       const target = generateTarget();
       const range = generateRange();

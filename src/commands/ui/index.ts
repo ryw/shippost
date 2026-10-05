@@ -533,6 +533,8 @@ export async function uiCommand(options: UiOptions): Promise<void> {
 
         if (route === 'POST /api/granola/sync') {
           const started = startJob('granola-sync', async (job) => {
+            // Surface actionable local authentication errors before starting the CLI.
+            loadGranolaRefreshToken();
             await new Promise<void>((resolve, reject) => {
               const child = spawn(process.execPath, [process.argv[1], 'granola-sync'], { cwd });
               const onData = (chunk: Buffer) => {
