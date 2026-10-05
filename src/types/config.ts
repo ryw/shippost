@@ -1,6 +1,6 @@
 import { DEFAULT_ANTHROPIC_MODEL } from '../services/anthropic-models.js';
 
-export type LLMProvider = 'ollama' | 'anthropic';
+export type LLMProvider = 'ollama' | 'anthropic' | 'grok';
 
 export type XApiTier = 'free' | 'basic';
 
@@ -13,6 +13,7 @@ export interface T2pConfig {
     model: string;
     timeout?: number;
   };
+  grok?: { model: string };
   anthropic?: {
     apiKey?: string;
     model: string;

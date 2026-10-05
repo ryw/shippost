@@ -705,6 +705,8 @@ export async function workCommand(options: WorkOptions): Promise<void> {
   if (options.model) {
     if (config.llm.provider === 'ollama' && config.ollama) {
       config.ollama.model = options.model;
+    } else if (config.llm.provider === 'grok') {
+      config.grok = { model: options.model };
     } else if (config.llm.provider === 'anthropic' && config.anthropic) {
       config.anthropic.model = options.model;
     }

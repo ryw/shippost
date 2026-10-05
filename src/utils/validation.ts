@@ -24,7 +24,7 @@ export function validateConfig(config: unknown): boolean {
   if (c.llm && typeof c.llm === 'object') {
     const llm = c.llm as Record<string, unknown>;
 
-    if (typeof llm.provider !== 'string' || !['ollama', 'anthropic'].includes(llm.provider as string)) {
+    if (typeof llm.provider !== 'string' || !['ollama', 'anthropic', 'grok'].includes(llm.provider as string)) {
       return false;
     }
 

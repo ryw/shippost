@@ -842,3 +842,17 @@ In Settings → Credentials, save a **Granola API key** with Personal notes acce
 The CLI uses the same importer when `GRANOLA_API_KEY` is saved in the workspace or set in the environment. Without a key, the CLI retains the legacy macOS desktop importer. The UI requires an API key and does not need Granola installed on the server. Keys use the same ignored, owner-only credential file as the other integrations and are never returned to the browser.
 
 To suspend X integration, turn off **Settings → X → Enable X API access**. This blocks OAuth and X API clients, including replies, unfollows, and analytics, for the workspace. Credentials and queued unfollow decisions are retained; pending decisions only run after explicit Retry. Granola imports and local content generation remain available.
+
+### Grok subscription provider
+
+Select **grok** in Settings to generate through the official Grok Build CLI using your Grok account. Grok Build must be installed on the computer running Shippost. Authenticate once from the workspace:
+
+```bash
+GROK_HOME="$PWD/.shippost-grok" grok login --device-auth
+```
+
+Complete the official sign-in link, save the Grok provider/model in Settings, and test the connection. The default model is `grok-4.7`. Grok manages its own credentials in `.shippost-grok/`, which Settings adds to `.gitignore`; this directory also contains native session state and must remain private. Shippost does not read or return the tokens. Subscription eligibility, limits, and billing are controlled by your Grok account.
+
+Generation sends the existing editable prompts through a temporary owner-only prompt file, deletes it afterward, and disables tools, search, and subagents. This provider does not use the X/Twitter API or an inherited xAI API key. Temperature is not sent. The existing three-output workflow and per-target retries are unchanged.
+
+References: [Grok Build](https://docs.x.ai/build/overview), [headless usage](https://docs.x.ai/build/cli/headless-scripting), and [Grok subscription usage](https://docs.x.ai/grok/faq).

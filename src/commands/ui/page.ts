@@ -804,14 +804,14 @@ function settingsProvider() {
   const provider = $(settingsFieldId('llm.provider'))?.value;
   const temperature = $(settingsFieldId('generation.temperature'));
   const model = $(settingsFieldId('anthropic.model'))?.value.trim() || '';
-  const supported = provider !== 'anthropic' || new RegExp(settingsData.anthropicTemperaturePattern).test(model);
+  const supported = provider !== 'grok' && (provider !== 'anthropic' || new RegExp(settingsData.anthropicTemperaturePattern).test(model));
   if (temperature) {
     temperature.closest('label').hidden = !supported;
     temperature.disabled = !supported;
   }
   const note = $('temperatureNote');
-  if (note) note.hidden = supported;
-  for (const group of ['Ollama', 'Anthropic']) {
+  if (note) note.hidden = supported || provider === 'grok';
+  for (const group of ['Ollama', 'Anthropic', 'Grok']) {
     const card = $('settings-group-' + group);
     if (card) card.hidden = group.toLowerCase() !== provider;
   }
@@ -890,6 +890,9 @@ function renderSettings(data) {
       clear.append(check, document.createTextNode('Remove saved ' + secret.label)); credentials.append(clear);
     }
   }
+  const grokHelp = document.createElement('p');
+  grokHelp.textContent = 'Uses Grok Build with your Grok account. Sign in on this computer, then test the connection.';
+  group('Grok').append(grokHelp);
   settingsProvider();
 }
 function setSettingsBusy(busy) {

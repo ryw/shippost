@@ -15,10 +15,11 @@ interface Field {
   env?: string;
 }
 export const SETTINGS_FIELDS: Field[] = [
-  { key: 'llm.provider', label: 'Provider', group: 'Generation', type: 'select', options: ['ollama', 'anthropic'], required: true },
+  { key: 'llm.provider', label: 'Provider', group: 'Generation', type: 'select', options: ['ollama', 'anthropic', 'grok'], required: true },
   { key: 'ollama.host', label: 'Server URL', group: 'Ollama', type: 'url', required: true },
   { key: 'ollama.model', label: 'Model', group: 'Ollama', type: 'text', required: true },
   { key: 'ollama.timeout', label: 'Request timeout (milliseconds)', group: 'Ollama', type: 'number', min: 1000, max: 3600000, integer: true },
+  { key: 'grok.model', label: 'Model', group: 'Grok', type: 'text' },
   { key: 'anthropic.model', label: 'Model', group: 'Anthropic', type: 'text', required: true },
   { key: 'anthropic.maxTokens', label: 'Maximum output tokens', group: 'Anthropic', type: 'number', min: 1, max: 200000, integer: true },
   { key: 'generation.postsPerTranscript', label: 'Posts per transcript', group: 'Generation', type: 'number', min: 1, max: 100, integer: true },
@@ -65,7 +66,7 @@ export function getSettings(cwd: string) {
   loadWorkspaceSecrets(cwd);
   const raw = rawConfig(cwd);
   const config = existsSync(join(cwd, '.shippostrc.json')) ? new FileSystemService(cwd).loadConfig() : DEFAULT_CONFIG;
-  const defaults: Record<string, unknown> = { 'x.enabled': true, 'x.apiTier': 'free', 'typefully.socialSetId': '1', 'blog.outputDir': 'src/content/drafts', 'blog.imageDir': 'public/images/posts', 'blog.imagePathPrefix': '/images/posts' };
+  const defaults: Record<string, unknown> = { 'grok.model': 'grok-4.7', 'x.enabled': true, 'x.apiTier': 'free', 'typefully.socialSetId': '1', 'blog.outputDir': 'src/content/drafts', 'blog.imageDir': 'public/images/posts', 'blog.imagePathPrefix': '/images/posts' };
   return {
     initialized: isShippostProject(cwd),
     anthropicModels: ANTHROPIC_MODELS,
@@ -138,7 +139,7 @@ export function saveSettings(cwd: string, body: Record<string, unknown>): void {
   }
   const ignorePath = join(cwd, '.gitignore');
   let ignore = existsSync(ignorePath) ? readFileSync(ignorePath, 'utf8') : '';
-  for (const rule of ['input/', '.shippostrc.json', '.shippost-secrets.json', '.shippost-*.json', '.granola-*.json', '.shippost-revisions/', '.env', '.env.local']) {
+  for (const rule of ['input/', '.shippost-grok/', '.shippostrc.json', '.shippost-secrets.json', '.shippost-*.json', '.granola-*.json', '.shippost-revisions/', '.env', '.env.local']) {
     if (!ignore.split(/\r?\n/).includes(rule)) ignore += '\n' + rule + '\n';
   }
   atomicWrite(ignorePath, ignore);
