@@ -83,6 +83,7 @@ export const PAGE = `<!doctype html>
   .settings-field input:not([type=checkbox]), .settings-field select { width: 100%; min-width: 0; padding: 10px 12px; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
   .settings-field input:focus-visible, .settings-field select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .settings-field small { color: var(--muted); overflow-wrap: anywhere; }
+  .settings-field[hidden] { display: none; }
   .settings-field.check { display: flex; align-items: center; gap: 10px; }
   .settings-actions { position: sticky; bottom: 0; padding: 16px 0; background: var(--bg); display: flex; gap: 10px; flex-wrap: wrap; border-top: 1px solid var(--line); }
   #settingsStatus { flex-basis: 100%; margin: 0; overflow-wrap: anywhere; }
@@ -776,6 +777,15 @@ let settingsData;
 function settingsFieldId(key) { return 'setting-' + key.replaceAll('.', '-'); }
 function settingsProvider() {
   const provider = $(settingsFieldId('llm.provider'))?.value;
+  const temperature = $(settingsFieldId('generation.temperature'));
+  const model = $(settingsFieldId('anthropic.model'))?.value.trim() || '';
+  const supported = provider !== 'anthropic' || new RegExp(settingsData.anthropicTemperaturePattern).test(model);
+  if (temperature) {
+    temperature.closest('label').hidden = !supported;
+    temperature.disabled = !supported;
+  }
+  const note = $('temperatureNote');
+  if (note) note.hidden = supported;
   for (const group of ['Ollama', 'Anthropic']) {
     const card = $('settings-group-' + group);
     if (card) card.hidden = group.toLowerCase() !== provider;
@@ -815,10 +825,23 @@ function renderSettings(data) {
     // Required fields in inactive provider groups must not block browser form submission.
     input.disabled = !!field.environment;
     if (field.key === 'llm.provider') input.onchange = settingsProvider;
+    if (field.key === 'anthropic.model') {
+      input.setAttribute('list', 'anthropicModels');
+      input.oninput = settingsProvider;
+      const choices = document.createElement('datalist'); choices.id = 'anthropicModels';
+      for (const model of data.anthropicModels) {
+        const option = document.createElement('option'); option.value = model.id; option.label = model.label; choices.append(option);
+      }
+      group(field.group).append(choices);
+    }
     label.append(title, input);
     if (field.environment) { const note = document.createElement('small'); note.textContent = 'Managed by ' + field.environment; label.append(note); }
     group(field.group).append(label);
   }
+  const temperatureNote = document.createElement('p');
+  temperatureNote.id = 'temperatureNote'; temperatureNote.style.color = 'var(--muted)'; temperatureNote.style.fontSize = '13px';
+  temperatureNote.textContent = 'Temperature is not sent for this Claude model. Guide its style through your prompts.';
+  group('Generation').append(temperatureNote);
   const credentials = group('Credentials');
   const note = document.createElement('p'); note.style.color = 'var(--muted)'; note.style.fontSize = '13px';
   note.textContent = 'Keys are saved only in this workspace, in a restricted local file ignored by Git. Saved keys are never displayed. Leave a field blank to keep its current value.';

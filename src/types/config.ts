@@ -1,3 +1,5 @@
+import { DEFAULT_ANTHROPIC_MODEL } from '../services/anthropic-models.js';
+
 export type LLMProvider = 'ollama' | 'anthropic';
 
 export type XApiTier = 'free' | 'basic';
@@ -50,7 +52,7 @@ export const DEFAULT_CONFIG: T2pConfig = {
     timeout: 60000,
   },
   anthropic: {
-    model: 'claude-sonnet-5',
+    model: DEFAULT_ANTHROPIC_MODEL,
     maxTokens: 4096,
   },
   generation: {

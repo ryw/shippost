@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync, unlinkS
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
+import { ANTHROPIC_MODELS, ANTHROPIC_TEMPERATURE_PATTERN } from './anthropic-models.js';
 import { FileSystemService } from './file-system.js';
 import { DEFAULT_CONFIG, type T2pConfig } from '../types/config.js';
 import { isShippostProject } from '../utils/validation.js';
@@ -66,6 +67,8 @@ export function getSettings(cwd: string) {
   const defaults: Record<string, unknown> = { 'x.apiTier': 'free', 'typefully.socialSetId': '1', 'blog.outputDir': 'src/content/drafts', 'blog.imageDir': 'public/images/posts', 'blog.imagePathPrefix': '/images/posts' };
   return {
     initialized: isShippostProject(cwd),
+    anthropicModels: ANTHROPIC_MODELS,
+    anthropicTemperaturePattern: ANTHROPIC_TEMPERATURE_PATTERN.source,
     fields: SETTINGS_FIELDS.map(field => ({ ...field, value: get(config, field.key) ?? defaults[field.key] ?? '', environment: field.env && process.env[field.env] ? field.env : undefined })),
     secrets: SECRET_KEYS.map(key => ({ key, label: SECRET_LABELS[key], configured: !!process.env[key] || (key === 'ANTHROPIC_API_KEY' && !!raw.anthropic?.apiKey), source: secretSource(key) || (key === 'ANTHROPIC_API_KEY' && raw.anthropic?.apiKey ? 'legacy config' : undefined) })),
   };

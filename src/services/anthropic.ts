@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { T2pConfig } from '../types/config.js';
+import { DEFAULT_ANTHROPIC_MODEL, anthropicSupportsTemperature } from './anthropic-models.js';
 import type { LLMService } from './llm-service.js';
 
 export class AnthropicService implements LLMService {
@@ -81,7 +82,7 @@ export class AnthropicService implements LLMService {
       const response = await this.client.messages.create({
         model: this.getModelName(),
         max_tokens: this.config.anthropic?.maxTokens || 4096,
-        // Fable 5 and Opus 4.7+ reject sampling params (400)
+        // Modern Claude models reject non-default sampling parameters.
         ...(this.supportsTemperature()
           ? { temperature: this.config.generation.temperature ?? 0.7 }
           : {}),
@@ -94,10 +95,9 @@ export class AnthropicService implements LLMService {
       });
 
       // Extract text from response
-      const textContent = response.content.find((block) => block.type === 'text');
-      if (textContent && textContent.type === 'text') {
-        return textContent.text;
-      }
+      // Newer models can interleave thinking and multiple text blocks.
+      const text = response.content.filter((block) => block.type === 'text').map((block) => block.text).join('\n');
+      if (text) return text;
 
       throw new Error('No text content in Anthropic response');
     } catch (error) {
@@ -109,16 +109,14 @@ export class AnthropicService implements LLMService {
   }
 
   getModelName(): string {
-    return this.config.anthropic?.model || 'claude-sonnet-5';
+    return this.config.anthropic?.model || DEFAULT_ANTHROPIC_MODEL;
   }
 
-  getTemperature(): number {
-    return this.config.generation.temperature ?? 0.7;
+  getTemperature(): number | undefined {
+    return this.supportsTemperature() ? this.config.generation.temperature ?? 0.7 : undefined;
   }
 
   supportsTemperature(): boolean {
-    // Fable/Mythos 5, Opus 5, Sonnet 5, and Opus 4.7+ reject sampling params (400)
-    const model = this.getModelName();
-    return !/^claude-(fable|mythos)-|^claude-(opus|sonnet)-5|^claude-opus-4-[7-9]/.test(model);
+    return anthropicSupportsTemperature(this.getModelName());
   }
 }

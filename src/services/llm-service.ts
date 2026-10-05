@@ -26,7 +26,7 @@ export interface LLMService {
   getModelName(): string;
 
   /**
-   * Get the temperature setting
+   * Get the temperature setting, or undefined when not sent to the provider
    */
-  getTemperature(): number;
+  getTemperature(): number | undefined;
 }

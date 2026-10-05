@@ -259,7 +259,7 @@ export class FileSystemService {
     }
   }
 
-  createPost(sourceFile: string, content: string, model: string, temperature: number): Post {
+  createPost(sourceFile: string, content: string, model: string, temperature: number | undefined): Post {
     return {
       id: randomUUID(),
       sourceFile,

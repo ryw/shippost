@@ -368,12 +368,11 @@ Configuration is stored in `.shippostrc.json`.
     "provider": "anthropic"
   },
   "anthropic": {
-    "model": "claude-sonnet-5",
+    "model": "claude-sonnet-5-5",
     "maxTokens": 4096
   },
   "generation": {
-    "postsPerTranscript": 8,
-    "temperature": 0.7
+    "postsPerTranscript": 8
   },
   "typefully": {
     "socialSetId": "1"
@@ -397,10 +396,10 @@ See [ANTHROPIC_SETUP.md](ANTHROPIC_SETUP.md) for detailed Claude setup.
 | `ollama.host` | `http://127.0.0.1:11434` | Ollama server URL |
 | `ollama.model` | `llama3.1` | Ollama model |
 | `ollama.timeout` | `60000` | Request timeout (ms) |
-| `anthropic.model` | `claude-sonnet-5` | Claude model |
+| `anthropic.model` | `claude-sonnet-5-5` | Claude model |
 | `anthropic.maxTokens` | `4096` | Max response tokens |
 | `generation.postsPerTranscript` | `8` | Posts per input file |
-| `generation.temperature` | `0.7` | Creativity (0.0-1.0) |
+| `generation.temperature` | `0.7` | Sampling (0.0-1.0); omitted for newer Claude models |
 | `generation.strategies.enabled` | `true` | Enable strategies |
 | `generation.strategies.autoSelect` | `true` | Auto-select strategies |
 | `generation.strategies.diversityWeight` | `0.7` | Category diversity (0.0-1.0) |
@@ -603,10 +602,10 @@ Share your style.md:
 - `mixtral` — More creative
 
 **Anthropic:**
-- `claude-sonnet-5` — Best balance (recommended)
-- `claude-haiku-4-5` — Fastest
-- `claude-opus-5` — Most capable
-- `claude-fable-5` — Highest capability tier (premium pricing)
+- `claude-sonnet-5-5` — Best balance (recommended)
+- `claude-haiku-4-5-20251001` — Fastest
+- `claude-opus-5-5` — Complex coding and knowledge work
+- `claude-fable-5-1` — Demanding reasoning
 
 ### Strategies
 
@@ -831,3 +830,5 @@ Settings covers the LLM provider, model and server, output/token limits, tempera
 API keys and the X client secret can be entered, replaced, or removed in the browser. They are stored in local `.shippost-secrets.json` with owner-only permissions, loaded by CLI commands and generation workers, and never sent back in settings responses. Blank credential fields keep existing values; explicit removal clears a saved value. Existing Anthropic keys in local config migrate to the separate credentials file on save. Both files stay ignored by Git; ignore rules do not remove files already tracked elsewhere. Environment-provided credentials and account overrides take precedence and appear as managed fields.
 
 Changes apply on the next operation, and cached provider clients reset after saving. Settings changes are blocked while background jobs or Typefully staging are active. Settings access is restricted to the localhost origin and saves require a per-server browser token. This is a local UI, not an authenticated public deployment: use the local browser until authenticated remote access is implemented.
+
+Anthropic model suggestions were refreshed against the [current model overview](https://platform.claude.com/docs/en/about-claude/models/overview) on October 5, 2026: Sonnet 5.5 (new-workspace default), Opus 5.5, Fable 5.1, and Haiku 4.5. Existing explicit model choices are preserved, and you can enter another model ID. Settings hides temperature for newer or unrecognized Claude models; the request also omits it, even when an older config has a temperature value. Known compatible legacy models (including Haiku 4.5) and Ollama retain the control. Anthropic recommends omitting sampling parameters for newer models in its [migration guide](https://platform.claude.com/docs/en/models/opus-5-5/migration-guide). Generated-post metadata omits temperature when it was not sent.
