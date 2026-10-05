@@ -14,16 +14,21 @@ import type { StrategyCategory } from '../types/strategy.js';
 import { granolaSyncCommand } from './granola-sync.js';
 import { writeCover } from '../utils/svg-cover.js';
 import { generateConceptCoverSvg } from '../utils/concept-cover.js';
+import { createHash, randomUUID } from 'crypto';
+import { isGenerationTarget } from '../types/state.js';
+import type { Post } from '../types/post.js';
 import type { LLMService } from '../services/llm-service.js';
 import { isRecord, parseJsonFromResponse } from '../utils/json-parser.js';
 
 interface WorkOptions {
+  target?: string;
+  sync?: boolean;
   model?: string;
   verbose?: boolean;
   force?: boolean;
   count?: number;
   strategy?: string;
-  strategies?: string;
+  strategies?: string | false;
   listStrategies?: boolean;
   category?: string;
   noStrategies?: boolean;
@@ -564,10 +569,12 @@ function findBlogPosts(
   return result;
 }
 
-async function updateRelatedBlogPosts(
+async function proposeRelatedBlogRevisions(
   llm: LLMService,
   transcript: string,
-  contentDirs: string[]
+  contentDirs: string[],
+  revisionTemplate: string,
+  sourceFile: string
 ): Promise<Array<{ path: string; updated: boolean }>> {
   const files = findBlogPosts(contentDirs);
   const results: Array<{ path: string; updated: boolean }> = [];
@@ -576,27 +583,7 @@ async function updateRelatedBlogPosts(
     try {
       const content = readFileSync(file.path, 'utf-8');
 
-      const prompt = `Given this new transcript content:
-
-${transcript}
-
-And this existing blog post:
-
-${content}
-
-Does this post need updating based on the new transcript content? If yes, respond with ONLY the updated file content — start with the --- frontmatter delimiter, no preamble, no commentary, no markdown fences. If no, respond with exactly "SKIP".
-
-Only update if the transcript content is genuinely related and would improve the post. Preserve all existing frontmatter fields and formatting exactly.
-
-SHAPE CONSTRAINTS (strict — these are short atomic posts):
-- ONE argument per post. 250-450 words in the body, hard cap at 500. NO ## section headers.
-- An update must NOT grow the post. Refine wording, correct facts, sharpen the argument — never append new sections, paragraphs of new material, new takeaways, or new FAQ entries.
-- Keep the existing takeaways count (3) and faq count (2). Do not add entries.
-- If the post is already over 500 body words, an acceptable update may shorten it, never lengthen it.
-- If the transcript contains a NEW argument related to this post's topic, respond "SKIP" — new arguments become new atomic posts, not additions to existing ones.
-- NO em dashes (—) in any text you write. If a sentence you are rewording contains one, replace it with a comma, colon, or period. Site lint allows at most one em dash per essay.
-- NO stock AI phrasings like "the thing nobody says out loud" or "saying the quiet part out loud". Site lint rejects them.
-- NO confidential material from the transcript: no customer- or prospect-identifying details, no weak internal traction or metrics admissions, no internal pricing or margin numbers, no other companies' private info, no AI-leads-to-layoffs framing, and no negative or unverified mentions of team members. Generalize the pattern; drop the specifics.`;
+      const prompt = revisionTemplate.replace(/\{\{(transcript|content)\}\}/g, (_, key) => key === 'transcript' ? transcript : content);
 
       const response = await llm.generate(prompt);
 
@@ -607,15 +594,22 @@ SHAPE CONSTRAINTS (strict — these are short atomic posts):
         // Extract the actual file content — find the first --- frontmatter delimiter
         const fmStart = trimmed.indexOf('---');
         if (fmStart >= 0) {
-          writeFileSync(file.path, trimmed.slice(fmStart), 'utf-8');
+          const proposalDir = join(process.cwd(), '.shippost-revisions');
+          mkdirSync(proposalDir, { recursive: true });
+          const proposal = join(proposalDir, randomUUID());
+          writeFileSync(proposal + '.mdx', trimmed.slice(fmStart), 'utf-8');
+          writeFileSync(proposal + '.json', JSON.stringify({
+            originalPath: relative(process.cwd(), file.path), sourceFile,
+            originalHash: createHash('sha256').update(content).digest('hex'),
+            createdAt: new Date().toISOString(),
+          }, null, 2));
           results.push({ path: file.path, updated: true });
         } else {
-          // No valid frontmatter found — don't overwrite
-          results.push({ path: file.path, updated: false });
+          throw new Error('Revision response has no frontmatter');
         }
       }
-    } catch {
-      results.push({ path: file.path, updated: false });
+    } catch (error) {
+      throw new Error(`Revision failed for ${basename(file.path)}: ${(error as Error).message}`);
     }
   }
 
@@ -683,13 +677,18 @@ export async function workCommand(options: WorkOptions): Promise<void> {
   }
 
   try {
+    const target = options.target || 'social';
+    if (!isGenerationTarget(target)) throw new Error('target must be social, blog, or revisions');
 
     // Step 0: Sync Granola transcripts
-    logger.section('[0/3] Syncing Granola transcripts...');
-    try {
-      await granolaSyncCommand({});
-    } catch {
-      logger.info('Granola sync skipped (not configured or no new transcripts)');
+    if (options.sync) {
+      logger.section('[0/3] Syncing Granola transcripts...');
+      try {
+        await granolaSyncCommand({});
+      } catch {
+        logger.info('Granola sync skipped (not configured or no new transcripts)');
+      }
+
     }
 
     // Step 1: Validate environment
@@ -727,19 +726,19 @@ export async function workCommand(options: WorkOptions): Promise<void> {
   const styleGuide = fs.loadPrompt('style.md');
   logger.success('Loaded style guide');
 
-  const workInstructions = fs.loadPrompt('work.md');
+  const workInstructions = target === 'social' ? fs.loadPrompt('work.md') : '';
   logger.success('Loaded work instructions');
 
-  const bangerEvalTemplate = fs.loadPrompt('banger-eval.md');
+  const bangerEvalTemplate = target === 'social' ? fs.loadPrompt('banger-eval.md') : '';
   logger.success('Loaded banger evaluation prompt');
 
   // Load content analysis template (for strategy selection)
-  const analysisTemplate = fs.fileExists(join(cwd, 'prompts', 'content-analysis.md'))
+  const analysisTemplate = target === 'social' && fs.fileExists(join(cwd, 'prompts', 'content-analysis.md'))
     ? fs.loadPrompt('content-analysis.md')
     : '';
 
   // Load user-defined strategies
-  const userStrategies = fs.loadStrategies();
+  const userStrategies = target === 'social' ? fs.loadStrategies() : [];
   logger.success(`Loaded ${userStrategies.length} content strategies`);
 
   // Initialize strategy services
@@ -751,7 +750,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
 
   // Determine strategy configuration
   const strategiesEnabled =
-    !options.noStrategies && (config.generation.strategies?.enabled === true);
+    !options.noStrategies && options.strategies !== false && (config.generation.strategies?.enabled === true);
   const postCount = options.count || config.generation.postsPerTranscript || 8;
 
   if (strategiesEnabled && options.verbose) {
@@ -780,7 +779,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
   // Count unprocessed files upfront
   const unprocessedFiles = options.force
     ? inputFiles
-    : inputFiles.filter(f => !fs.isFileProcessed(f, state));
+    : inputFiles.filter(f => !fs.isFileProcessed(f, state, target));
   let remaining = unprocessedFiles.length;
 
   if (remaining === 0) {
@@ -805,7 +804,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
     logger.step(relativePath);
 
     // Check if file was already processed (unless --force is used)
-    if (!options.force && fs.isFileProcessed(filePath, state)) {
+    if (!options.force && fs.isFileProcessed(filePath, state, target)) {
       logger.info('  Skipped (already processed)');
       totalSkipped++;
       continue;
@@ -821,7 +820,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
       }
       if (choice !== 'y' && choice !== 'yes') {
         logger.info('  Skipped');
-        state = fs.markFileProcessed(filePath, 0, state);
+        state = fs.markFileProcessed(filePath, 0, state, target);
         fs.saveState(state);
         totalSkipped++;
         remaining--;
@@ -842,251 +841,263 @@ export async function workCommand(options: WorkOptions): Promise<void> {
       let xPostsGenerated = 0;
       let linkedinPostsGenerated = 0;
 
-      // Strategy-based generation
-      if (strategiesEnabled) {
-        // Determine which strategies to use
-        let selectedStrategies;
+      const pendingPosts: Post[] = [];
+      let generationFailed = false;
+      let blogDraftCount = 0;
+      let updatedCount = 0;
 
-        if (options.strategy) {
-          // Manual single strategy selection
-          selectedStrategies = strategySelector.getStrategiesByIds([options.strategy]);
-          if (selectedStrategies.length === 0) {
-            logger.info(`  No strategy found with ID: ${options.strategy}`);
-            totalErrors++;
-            continue;
-          }
-        } else if (options.strategies) {
-          // Manual multiple strategy selection
-          const ids = options.strategies.split(',').map((s) => s.trim());
-          selectedStrategies = strategySelector.getStrategiesByIds(ids);
-          if (selectedStrategies.length === 0) {
-            logger.info(`  No strategies found for IDs: ${options.strategies}`);
-            totalErrors++;
-            continue;
-          }
-        } else {
-          // Auto-select strategies based on content analysis
-          if (contentAnalyzer) {
-            if (options.verbose) {
-              logger.info('  Analyzing content...');
+      if (target === 'social') {
+        // Strategy-based generation
+        if (strategiesEnabled) {
+          // Determine which strategies to use
+          let selectedStrategies;
+
+          if (options.strategy) {
+            // Manual single strategy selection
+            selectedStrategies = strategySelector.getStrategiesByIds([options.strategy]);
+            if (selectedStrategies.length === 0) {
+              logger.info(`  No strategy found with ID: ${options.strategy}`);
+              totalErrors++;
+              continue;
             }
-
-            const analysis = await contentAnalyzer.analyzeTranscript(transcript);
-
-            if (options.verbose) {
-              logger.info(`  Content types: ${analysis.contentTypes.join(', ')}`);
+          } else if (options.strategies) {
+            // Manual multiple strategy selection
+            const ids = options.strategies.split(',').map((s) => s.trim());
+            selectedStrategies = strategySelector.getStrategiesByIds(ids);
+            if (selectedStrategies.length === 0) {
+              logger.info(`  No strategies found for IDs: ${options.strategies}`);
+              totalErrors++;
+              continue;
             }
-
-            selectedStrategies = strategySelector.selectStrategies(
-              analysis,
-              postCount,
-              config.generation.strategies?.preferThreadFriendly || false
-            );
           } else {
-            // No analyzer available, use general-purpose strategies
-            selectedStrategies = strategySelector.getAllStrategies().slice(0, postCount);
-          }
-        }
-
-        if (options.verbose) {
-          logger.info(`  Selected ${selectedStrategies.length} strategies`);
-        }
-
-        logger.info(`  Generating ${selectedStrategies.length} posts...`);
-
-        // Generate one post per strategy
-        for (let i = 0; i < selectedStrategies.length; i++) {
-          const strategy = selectedStrategies[i];
-          const progress = `[${i + 1}/${selectedStrategies.length}]`;
-
-          try {
-            // Show which strategy is being processed
-            logger.info(`  ${progress} ${strategy.name}...`);
-
-            const strategyPrompt = buildStrategyPrompt(
-              systemPrompt,
-              styleGuide,
-              workInstructions,
-              strategy.prompt,
-              transcript
-            );
-
-            const response = await llm.generate(strategyPrompt);
-
-            // Parse single post from response
-            const posts = parsePostsFromResponse(response);
-
-            if (posts.length > 0) {
-              const postData = posts[0]; // Take first post
-
-              const post = fs.createPost(
-                relativePath,
-                postData.content,
-                llm.getModelName(),
-                llm.getTemperature()
-              );
-
-              // Set platform
-              post.platform = postData.platform || 'x';
-
-              // Add strategy metadata
-              post.metadata.strategy = {
-                id: strategy.id,
-                name: strategy.name,
-                category: strategy.category,
-              };
-
-              // Evaluate banger potential
-              try {
-                const evalPrompt = buildBangerEvalPrompt(bangerEvalTemplate, postData.content);
-                const evalResponse = await llm.generate(evalPrompt);
-                const evaluation = parseBangerEval(evalResponse);
-
-                if (evaluation) {
-                  post.metadata.bangerScore = evaluation.score;
-                  post.metadata.bangerEvaluation = evaluation;
-
-                  // Show banger score if available
-                  if (options.verbose) {
-                    logger.info(`    ✓ Generated (banger: ${evaluation.score}/99)`);
-                  }
-                }
-              } catch (evalError) {
-                if (options.verbose) {
-                  logger.info(`    ✓ Generated (banger eval failed)`);
-                }
+            // Auto-select strategies based on content analysis
+            if (contentAnalyzer) {
+              if (options.verbose) {
+                logger.info('  Analyzing content...');
               }
 
-              fs.appendPost(post);
-              postsGenerated++;
-
-              // Count by platform
-              if (post.platform === 'linkedin') {
-                linkedinPostsGenerated++;
-              } else {
-                xPostsGenerated++;
-              }
-
-              // Show completion with post content
-              if (!options.verbose) {
-                logger.success(`  ${progress} ✓ Complete`);
-              }
-
-              // Display the generated post
-              logger.blank();
-              const bangerInfo = post.metadata.bangerScore
-                ? ` [banger: ${post.metadata.bangerScore}/99]`
-                : '';
-              logger.info(`  📝 Post ${i + 1}: ${strategy.name}${bangerInfo}`);
-              logger.info('  ' + '─'.repeat(60));
-              // Indent each line of the post content
-              const lines = postData.content.split('\n');
-              lines.forEach(line => {
-                logger.info(`  ${line}`);
-              });
-              logger.info('  ' + '─'.repeat(60));
-              logger.blank();
-            } else {
-              logger.info(`  ${progress} ✗ No valid post generated`);
-            }
-          } catch (stratError) {
-            logger.info(`  ${progress} ✗ Failed: ${(stratError as Error).message}`);
-            if (options.verbose) {
-              logger.info(`    Strategy: ${strategy.id}`);
-            }
-          }
-        }
-      } else {
-        // Direct generation using work.md instructions
-        logger.info(`  Generating posts...`);
-
-        const prompt = buildPrompt(systemPrompt, styleGuide, workInstructions, transcript);
-
-        if (options.verbose) {
-          logger.info(`  Prompt length: ${prompt.length} characters`);
-        }
-
-        const response = await llm.generate(prompt);
-
-        if (options.verbose) {
-          logger.info(`  Response length: ${response.length} characters`);
-        }
-
-        const posts = parsePostsFromResponse(response);
-
-        if (posts.length === 0) {
-          logger.info('  ✗ Generated 0 posts (parsing failed)');
-          totalErrors++;
-          continue;
-        }
-
-        logger.info(`  Generated ${posts.length} posts, evaluating...`);
-
-        // Evaluate and save posts
-        for (let i = 0; i < posts.length; i++) {
-          const postData = posts[i];
-          const progress = `[${i + 1}/${posts.length}]`;
-
-          if (options.verbose) {
-            logger.info(`  ${progress} Evaluating post...`);
-          }
-          const post = fs.createPost(
-            relativePath,
-            postData.content,
-            llm.getModelName(),
-            llm.getTemperature()
-          );
-
-          // Set platform
-          post.platform = postData.platform || 'x';
-
-          // Evaluate banger potential
-          try {
-            const evalPrompt = buildBangerEvalPrompt(bangerEvalTemplate, postData.content);
-            const evalResponse = await llm.generate(evalPrompt);
-            const evaluation = parseBangerEval(evalResponse);
-
-            if (evaluation) {
-              post.metadata.bangerScore = evaluation.score;
-              post.metadata.bangerEvaluation = evaluation;
+              const analysis = await contentAnalyzer.analyzeTranscript(transcript);
 
               if (options.verbose) {
-                logger.info(`  ${progress} ✓ Saved (banger: ${evaluation.score}/99)`);
+                logger.info(`  Content types: ${analysis.contentTypes.join(', ')}`);
+              }
+
+              selectedStrategies = strategySelector.selectStrategies(
+                analysis,
+                postCount,
+                config.generation.strategies?.preferThreadFriendly || false
+              );
+            } else {
+              // No analyzer available, use general-purpose strategies
+              selectedStrategies = strategySelector.getAllStrategies().slice(0, postCount);
+            }
+          }
+
+          if (options.verbose) {
+            logger.info(`  Selected ${selectedStrategies.length} strategies`);
+          }
+
+          logger.info(`  Generating ${selectedStrategies.length} posts...`);
+
+          // Generate one post per strategy
+          for (let i = 0; i < selectedStrategies.length; i++) {
+            const strategy = selectedStrategies[i];
+            const progress = `[${i + 1}/${selectedStrategies.length}]`;
+
+            try {
+              // Show which strategy is being processed
+              logger.info(`  ${progress} ${strategy.name}...`);
+
+              const strategyPrompt = buildStrategyPrompt(
+                systemPrompt,
+                styleGuide,
+                workInstructions,
+                strategy.prompt,
+                transcript
+              );
+
+              const response = await llm.generate(strategyPrompt);
+
+              // Parse single post from response
+              const posts = parsePostsFromResponse(response);
+
+              if (posts.length > 0) {
+                const postData = posts[0]; // Take first post
+
+                const post = fs.createPost(
+                  relativePath,
+                  postData.content,
+                  llm.getModelName(),
+                  llm.getTemperature()
+                );
+
+                // Set platform
+                post.platform = postData.platform || 'x';
+
+                // Add strategy metadata
+                post.metadata.strategy = {
+                  id: strategy.id,
+                  name: strategy.name,
+                  category: strategy.category,
+                };
+
+                // Evaluate banger potential
+                try {
+                  const evalPrompt = buildBangerEvalPrompt(bangerEvalTemplate, postData.content);
+                  const evalResponse = await llm.generate(evalPrompt);
+                  const evaluation = parseBangerEval(evalResponse);
+
+                  if (evaluation) {
+                    post.metadata.bangerScore = evaluation.score;
+                    post.metadata.bangerEvaluation = evaluation;
+
+                    // Show banger score if available
+                    if (options.verbose) {
+                      logger.info(`    ✓ Generated (banger: ${evaluation.score}/99)`);
+                    }
+                  }
+                } catch (evalError) {
+                  if (options.verbose) {
+                    logger.info(`    ✓ Generated (banger eval failed)`);
+                  }
+                }
+
+                pendingPosts.push(post);
+                postsGenerated++;
+
+                // Count by platform
+                if (post.platform === 'linkedin') {
+                  linkedinPostsGenerated++;
+                } else {
+                  xPostsGenerated++;
+                }
+
+                // Show completion with post content
+                if (!options.verbose) {
+                  logger.success(`  ${progress} ✓ Complete`);
+                }
+
+                // Display the generated post
+                logger.blank();
+                const bangerInfo = post.metadata.bangerScore
+                  ? ` [banger: ${post.metadata.bangerScore}/99]`
+                  : '';
+                logger.info(`  📝 Post ${i + 1}: ${strategy.name}${bangerInfo}`);
+                logger.info('  ' + '─'.repeat(60));
+                // Indent each line of the post content
+                const lines = postData.content.split('\n');
+                lines.forEach(line => {
+                  logger.info(`  ${line}`);
+                });
+                logger.info('  ' + '─'.repeat(60));
+                logger.blank();
+              } else {
+                generationFailed = true;
+                logger.info(`  ${progress} ✗ No valid post generated`);
+              }
+            } catch (stratError) {
+              generationFailed = true;
+              logger.info(`  ${progress} ✗ Failed: ${(stratError as Error).message}`);
+              if (options.verbose) {
+                logger.info(`    Strategy: ${strategy.id}`);
               }
             }
-          } catch (evalError) {
+          }
+        } else {
+          // Direct generation using work.md instructions
+          logger.info(`  Generating posts...`);
+
+          const prompt = buildPrompt(systemPrompt, styleGuide, workInstructions, transcript);
+
+          if (options.verbose) {
+            logger.info(`  Prompt length: ${prompt.length} characters`);
+          }
+
+          const response = await llm.generate(prompt);
+
+          if (options.verbose) {
+            logger.info(`  Response length: ${response.length} characters`);
+          }
+
+          const posts = parsePostsFromResponse(response);
+
+          if (posts.length === 0) {
+            logger.info('  ✗ Generated 0 posts (parsing failed)');
+            totalErrors++;
+            continue;
+          }
+
+          logger.info(`  Generated ${posts.length} posts, evaluating...`);
+
+          // Evaluate and save posts
+          for (let i = 0; i < posts.length; i++) {
+            const postData = posts[i];
+            const progress = `[${i + 1}/${posts.length}]`;
+
             if (options.verbose) {
-              logger.info(`  ${progress} ✓ Saved (banger eval failed)`);
+              logger.info(`  ${progress} Evaluating post...`);
             }
+            const post = fs.createPost(
+              relativePath,
+              postData.content,
+              llm.getModelName(),
+              llm.getTemperature()
+            );
+
+            // Set platform
+            post.platform = postData.platform || 'x';
+
+            // Evaluate banger potential
+            try {
+              const evalPrompt = buildBangerEvalPrompt(bangerEvalTemplate, postData.content);
+              const evalResponse = await llm.generate(evalPrompt);
+              const evaluation = parseBangerEval(evalResponse);
+
+              if (evaluation) {
+                post.metadata.bangerScore = evaluation.score;
+                post.metadata.bangerEvaluation = evaluation;
+
+                if (options.verbose) {
+                  logger.info(`  ${progress} ✓ Saved (banger: ${evaluation.score}/99)`);
+                }
+              }
+            } catch (evalError) {
+              if (options.verbose) {
+                logger.info(`  ${progress} ✓ Saved (banger eval failed)`);
+              }
+            }
+
+            pendingPosts.push(post);
+            postsGenerated++;
+
+            // Count by platform
+            if (post.platform === 'linkedin') {
+              linkedinPostsGenerated++;
+            } else {
+              xPostsGenerated++;
+            }
+
+            // Display the generated post
+            logger.blank();
+            const bangerInfo = post.metadata.bangerScore
+              ? ` [banger: ${post.metadata.bangerScore}/99]`
+              : '';
+            logger.info(`  📝 Post ${i + 1}${bangerInfo}`);
+            logger.info('  ' + '─'.repeat(60));
+            // Indent each line of the post content
+            const lines = postData.content.split('\n');
+            lines.forEach(line => {
+              logger.info(`  ${line}`);
+            });
+            logger.info('  ' + '─'.repeat(60));
+            logger.blank();
           }
 
-          fs.appendPost(post);
-          postsGenerated++;
-
-          // Count by platform
-          if (post.platform === 'linkedin') {
-            linkedinPostsGenerated++;
-          } else {
-            xPostsGenerated++;
-          }
-
-          // Display the generated post
-          logger.blank();
-          const bangerInfo = post.metadata.bangerScore
-            ? ` [banger: ${post.metadata.bangerScore}/99]`
-            : '';
-          logger.info(`  📝 Post ${i + 1}${bangerInfo}`);
-          logger.info('  ' + '─'.repeat(60));
-          // Indent each line of the post content
-          const lines = postData.content.split('\n');
-          lines.forEach(line => {
-            logger.info(`  ${line}`);
-          });
-          logger.info('  ' + '─'.repeat(60));
-          logger.blank();
+          logger.success(`  ✓ Saved ${posts.length} posts`);
         }
 
-        logger.success(`  ✓ Saved ${posts.length} posts`);
+        if (generationFailed || pendingPosts.length === 0) throw new Error('Social generation incomplete; no posts saved. Retry this target.');
+        for (const post of pendingPosts) fs.appendPost(post);
       }
 
       // Platform counts are tracked during generation
@@ -1094,67 +1105,69 @@ export async function workCommand(options: WorkOptions): Promise<void> {
       const draftsDir = config.blog?.outputDir || 'src/content/drafts';
       const postsDir = join(draftsDir, '..', 'posts');
 
-      // Load published post index so the LLM can cross-link new essays
-      const publishedIndex = loadPublishedPostIndex(postsDir);
-      if (options.verbose) {
-        logger.info(`  Loaded ${publishedIndex.length} published essays for cross-linking`);
-      }
-      const publishedSlugSet = new Set(publishedIndex.map((p) => p.slug));
+      if (target === 'blog') {
+        // Load published post index so the LLM can cross-link new essays
+        const publishedIndex = loadPublishedPostIndex(postsDir);
+        if (options.verbose) {
+          logger.info(`  Loaded ${publishedIndex.length} published essays for cross-linking`);
+        }
+        const publishedSlugSet = new Set(publishedIndex.map((p) => p.slug));
 
-      // Generate blog drafts (1-3 atomic essays per transcript)
-      logger.info('  Generating blog drafts...');
-      const blogResults = await generateBlogDrafts(llm, transcript, systemPrompt, styleGuide, publishedIndex);
-      logger.info(`  LLM identified ${blogResults.length} atomic essay${blogResults.length === 1 ? '' : 's'}`);
+        // Generate blog drafts (1-3 atomic essays per transcript)
+        logger.info('  Generating blog drafts...');
+        const blogResults = await generateBlogDrafts(llm, transcript, systemPrompt, styleGuide, publishedIndex);
+        logger.info(`  LLM identified ${blogResults.length} atomic essay${blogResults.length === 1 ? '' : 's'}`);
 
-      // Validate each essay cross-links to at least one published essay
-      if (publishedIndex.length > 0) {
-        for (let i = 0; i < blogResults.length; i++) {
-          if (!bodyLinksToPublished(blogResults[i].body, publishedSlugSet)) {
-            logger.info(`  ⚠ Essay ${i + 1} ("${blogResults[i].title}") has no link to a published essay`);
+        // Validate each essay cross-links to at least one published essay
+        if (publishedIndex.length > 0) {
+          for (let i = 0; i < blogResults.length; i++) {
+            if (!bodyLinksToPublished(blogResults[i].body, publishedSlugSet)) {
+              logger.info(`  ⚠ Essay ${i + 1} ("${blogResults[i].title}") has no link to a published essay`);
+            }
           }
         }
-      }
 
-      // Disambiguate within-run slug collisions so two essays from the same
-      // transcript don't overwrite each other.
-      const usedSlugs = new Set<string>();
-      const blogDraftCount = blogResults.length;
-      for (const result of blogResults) {
-        const baseSlug = result.slug || createSlug(result.title);
-        let slug = baseSlug;
-        let n = 2;
-        while (usedSlugs.has(slug)) {
-          slug = `${baseSlug}-${n}`;
-          n++;
+        // Disambiguate within-run slug collisions so two essays from the same
+        // transcript don't overwrite each other.
+        const usedSlugs = new Set<string>();
+        blogDraftCount = blogResults.length;
+        for (const result of blogResults) {
+          const baseSlug = createSlug(result.slug || result.title) || 'draft';
+          let slug = baseSlug;
+          let n = 2;
+          while (usedSlugs.has(slug) || existsSync(join(draftsDir, slug + '.mdx')) || existsSync(join(postsDir, slug + '.mdx')) || existsSync(join(config.blog?.imageDir || 'public/images/posts', slug + '.svg'))) {
+            slug = `${baseSlug}-${n}`;
+            n++;
+          }
+          usedSlugs.add(slug);
+          result.slug = slug;
+
+          const blogPath = await saveBlogDraft(
+            draftsDir,
+            result,
+            relativePath,
+            config.blog?.imageDir || 'public/images/posts',
+            config.blog?.imagePathPrefix || '/images/posts',
+            llm
+          );
+          logger.success(`  Blog draft: ${relative(cwd, blogPath)}`);
         }
-        usedSlugs.add(slug);
-        result.slug = slug;
 
-        const blogPath = await saveBlogDraft(
-          draftsDir,
-          result,
-          relativePath,
-          config.blog?.imageDir || 'public/images/posts',
-          config.blog?.imagePathPrefix || '/images/posts',
-          llm
-        );
-        logger.success(`  Blog draft: ${relative(cwd, blogPath)}`);
       }
-
-      // Update related existing blog posts (drafts + published)
-      logger.info('  Checking existing blog posts...');
-      const updates = await updateRelatedBlogPosts(llm, transcript, [draftsDir, postsDir]);
-      const updatedCount = updates.filter(u => u.updated).length;
-      if (updatedCount > 0) {
-        logger.success(`  Updated ${updatedCount} related blog post${updatedCount === 1 ? '' : 's'}`);
+      if (target === 'revisions') {
+        const revisionTemplate = fs.loadPrompt('blog-revision.md');
+        logger.info('  Proposing revisions (original articles will remain unchanged)...');
+        const updates = await proposeRelatedBlogRevisions(llm, transcript, [draftsDir, postsDir], revisionTemplate, relativePath);
+        updatedCount = updates.filter(u => u.updated).length;
+        logger.info(`  Saved ${updatedCount} proposals in .shippost-revisions/ for manual review`);
       }
 
       // Processing summary
       const summaryParts = [];
       if (xPostsGenerated > 0) summaryParts.push(`${xPostsGenerated} X post${xPostsGenerated === 1 ? '' : 's'}`);
       if (linkedinPostsGenerated > 0) summaryParts.push(`${linkedinPostsGenerated} LinkedIn post${linkedinPostsGenerated === 1 ? '' : 's'}`);
-      summaryParts.push(`${blogDraftCount} new blog draft${blogDraftCount === 1 ? '' : 's'}`);
-      if (updatedCount > 0) summaryParts.push(`${updatedCount} existing post${updatedCount === 1 ? '' : 's'} updated`);
+      if (target === 'blog') summaryParts.push(`${blogDraftCount} new blog draft${blogDraftCount === 1 ? '' : 's'}`);
+      if (updatedCount > 0) summaryParts.push(`${updatedCount} article revision proposal${updatedCount === 1 ? '' : 's'}`);
 
       logger.info(`  Summary: ${summaryParts.join(', ')}`);
       totalProcessed++;
@@ -1162,7 +1175,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
       remaining--;
 
       // Mark file as processed and save immediately
-      state = fs.markFileProcessed(filePath, postsGenerated, state);
+      state = fs.markFileProcessed(filePath, postsGenerated, state, target);
       fs.saveState(state);
 
       logger.success(`  ✓ Done — ${remaining} transcript${remaining === 1 ? '' : 's'} remaining`);
@@ -1185,13 +1198,15 @@ export async function workCommand(options: WorkOptions): Promise<void> {
   if (totalErrors > 0) {
     logger.info(`- Errors: ${totalErrors}`);
   }
-  logger.info(`- Posts saved to: posts.jsonl`);
+  logger.info(`- Target: ${target}`);
+  if (target === 'social') logger.info('- Posts saved to: posts.jsonl');
+  if (totalErrors > 0) process.exitCode = 1;
 
   if (totalGenerated > 0) {
     logger.blank();
     logger.info('Next steps:');
     logger.info('- Review posts in posts.jsonl');
-    logger.info('- Run `ship review` to review and stage posts');
+    logger.info('- Run `ship review` to approve posts, then `ship ui` to stage them');
   }
   } catch (error) {
     logger.blank();

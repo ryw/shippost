@@ -79,6 +79,17 @@ test('review requires approval before staging and handles retries and concurrent
       const response = await fetch(`http://127.0.0.1:${port}/api/${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
       return { status: response.status, body: await response.json() };
     };
+    const source = join(dir, 'input', 'synthetic.txt');
+    writeFileSync(source, 'Synthetic meeting.');
+    const fs = new FileSystemService(dir);
+    fs.saveState(fs.markFileProcessed(source, 1, fs.loadState(), 'social'));
+    assert.equal((await api('transcripts?target=social')).body.transcripts.length, 0);
+    assert.equal((await api('transcripts?target=blog')).body.transcripts.length, 1);
+    assert.equal((await api('transcripts?target=invalid')).status, 400);
+    assert.equal((await api('generate', { files: ['synthetic.txt'], target: 'invalid' })).status, 400);
+    assert.equal((await api('transcripts/skip', { name: 'synthetic.txt', target: 'blog' })).status, 200);
+    assert.equal((await api('transcripts?target=blog')).body.transcripts.length, 0);
+    assert.equal((await api('transcripts?target=revisions')).body.transcripts.length, 1);
     assert.equal((await api('stage-approved', {})).status, 404);
     assert.equal((await api('decision', { id: 'one', action: 'stage' })).status, 400);
     assert.equal((await api('decision', { id: 'one', action: 'approve', content: 'edited' })).status, 200);

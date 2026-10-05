@@ -46,6 +46,8 @@ export const PAGE = `<!doctype html>
   button.primary { background: var(--accent); color: #fff; border: none; border-radius: 7px; padding: 8px 16px; font: 500 14px -apple-system, sans-serif; cursor: pointer; }
   button.primary:disabled { opacity: .5; cursor: default; }
   button.ghost { background: none; color: var(--fg); border: 1px solid var(--line); border-radius: 7px; padding: 7px 14px; font: 500 14px -apple-system, sans-serif; cursor: pointer; }
+  select.ghost { max-width: 100%; background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 7px; padding: 7px 10px; font: inherit; }
+  select.ghost:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   button.ghost:hover { border-color: var(--muted); }
   button.ghost.danger { color: var(--danger); }
   .row { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
@@ -113,6 +115,16 @@ export const PAGE = `<!doctype html>
   </section>
 
   <section class="view" id="view-generate">
+    <div class="toolbar">
+      <label for="genTarget">Generate</label>
+      <select id="genTarget" class="ghost">
+        <option value="social">Social posts</option>
+        <option value="blog">Blog drafts</option>
+        <option value="revisions">Article revision proposals</option>
+      </select>
+      <button class="ghost" id="genSync">Sync Granola</button>
+    </div>
+    <p id="genTargetNote" style="color:var(--muted);font-size:13px">Social posts go to Review for approval.</p>
     <div class="toolbar" id="genStatus" style="display:none">
       <span class="dim" id="genStatusText" style="color:var(--muted);font-size:13px"></span>
     </div>
@@ -374,7 +386,7 @@ function setEditing(on) {
 }
 
 document.addEventListener('keydown', (e) => {
-  if (activeTab === 'generate' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+  if (activeTab === 'generate' && document.activeElement?.tagName !== 'SELECT' && !e.metaKey && !e.ctrlKey && !e.altKey) {
     if (e.key === 'p') processTranscript();
     else if (e.key === 'k') skipTranscript();
     return;
@@ -425,18 +437,35 @@ $('content').addEventListener('input', () => {
 // ── generate ──────────────────────────────────────────────────────────
 let gqueue = [], gpolling = false;
 
+function generateTarget() { return $('genTarget').value; }
+
+async function refreshTranscripts() {
+  const target = generateTarget();
+  const d = await api('GET', '/api/transcripts?target=' + target);
+  if (target !== generateTarget()) return;
+  gqueue = d.transcripts;
+  showTranscript();
+}
+
 function initGenerate() {
-  api('GET', '/api/transcripts').then((d) => {
-    gqueue = d.transcripts;
+  refreshTranscripts().catch((e) => toast('⚠️ ' + e.message));
+  $('genTarget').onchange = () => {
+    gqueue = [];
     showTranscript();
-  }).catch((e) => toast('⚠️ ' + e.message));
+    $('genTargetNote').textContent = {
+      social: 'Social posts go to Review for approval.',
+      blog: 'Creates blog drafts for review. Existing articles remain unchanged.',
+      revisions: 'Saves proposed changes in .shippost-revisions/ for manual review and application.'
+    }[generateTarget()];
+    refreshTranscripts().catch((e) => toast('⚠️ ' + e.message));
+  };
   $('genProcess').onclick = processTranscript;
   $('genSkip').onclick = skipTranscript;
-  syncGranola();
+  $('genSync').onclick = syncGranola;
   watchGenerate(); // pick up any batch already running server-side
 }
 
-// Pull new Granola transcripts on tab load so fresh meetings show up
+// Pull new Granola transcripts on explicit request so fresh meetings show up
 // without a manual \`ship granola-sync\`.
 function syncGranola() {
   api('POST', '/api/granola/sync').then(() => {
@@ -453,7 +482,9 @@ function syncGranola() {
       if (!gpolling) $('genStatus').style.display = 'none';
       if (j.error) { toast('⚠️ Granola sync: ' + j.error); return; }
       const cur = gqueue[0] && gqueue[0].name;
-      const d = await api('GET', '/api/transcripts');
+      const target = generateTarget();
+      const d = await api('GET', '/api/transcripts?target=' + target);
+      if (target !== generateTarget()) return;
       const fresh = d.transcripts.length - gqueue.length;
       gqueue = d.transcripts;
       // Keep whatever Ry is reading at the front of the queue
@@ -495,9 +526,10 @@ async function showTranscript() {
 function processTranscript() {
   const t = gqueue[0];
   if (!t) return;
-  api('POST', '/api/generate', { files: [t.name] }).then(() => {
+  const target = generateTarget();
+  api('POST', '/api/generate', { files: [t.name], target }).then(() => {
     toast('Processing ' + t.name.replace(/\\.(txt|md)$/, ''));
-    gqueue.shift();
+    if (generateTarget() === target && gqueue[0] === t) gqueue.shift();
     showTranscript();
     watchGenerate();
     tabInits.review = false; // refresh review queue next visit
@@ -507,8 +539,9 @@ function processTranscript() {
 function skipTranscript() {
   const t = gqueue[0];
   if (!t) return;
-  api('POST', '/api/transcripts/skip', { name: t.name }).then(() => {
-    gqueue.shift();
+  const target = generateTarget();
+  api('POST', '/api/transcripts/skip', { name: t.name, target }).then(() => {
+    if (generateTarget() === target && gqueue[0] === t) gqueue.shift();
     showTranscript();
   }).catch((e) => toast('⚠️ ' + e.message));
 }
@@ -527,8 +560,9 @@ function watchGenerate() {
       } else {
         gpolling = false;
         if ($('genStatus').style.display !== 'none') {
-          $('genStatusText').textContent = s.error ? '⚠️ ' + s.error : '✓ batch done — new posts in Review';
+          $('genStatusText').textContent = s.error ? '⚠️ ' + s.error : '✓ batch done — see the generation log for saved outputs';
           tabInits.review = false;
+          refreshTranscripts().catch(() => {});
         }
       }
     } catch { gpolling = false; }
