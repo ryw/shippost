@@ -46,6 +46,7 @@ test('environment overrides preserve defaults and do not persist to config', () 
 
 test('review requires approval before staging and handles retries and concurrent requests', async () => {
   const dir = workspace();
+  writeFileSync(join(dir, '.shippost-unfollow-pending.json'), JSON.stringify({ fixture: { username: 'fixture', queuedAt: new Date().toISOString() } }));
   const postsPath = join(dir, 'posts.jsonl');
   writeFileSync(postsPath, [post('one'), post('two', 'keep'), post('fail'), post('rejected', 'rejected')].map(p => JSON.stringify(p)).join('\n') + '\n');
   const readPosts = () => readFileSync(postsPath, 'utf8').trim().split('\n').map(JSON.parse);
@@ -105,6 +106,7 @@ test('review requires approval before staging and handles retries and concurrent
       const response = await fetch(`http://127.0.0.1:${port}/api/${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
       return { status: response.status, body: await response.json() };
     };
+    assert.equal((await api('job/unfollow-run')).body.running, false, 'pending unfollows must not start or block Settings on startup');
     const sourceName = new Date().toISOString().slice(0, 10) + '_synthetic.txt';
     const source = join(dir, 'input', sourceName);
     writeFileSync(source, 'Synthetic meeting.');

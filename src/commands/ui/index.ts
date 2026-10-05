@@ -860,8 +860,7 @@ export async function uiCommand(options: UiOptions): Promise<void> {
       logger.info('  Review • Generate • Reply • Stats • Unfollow — Ctrl-C here when done');
       const pending = Object.keys(loadPendingUnfollows(cwd)).length;
       if (pending > 0 && isShippostProject(cwd)) {
-        logger.info(`  ${pending} pending unfollow decision${pending === 1 ? '' : 's'} — retrying`);
-        runUnfollowWorker();
+        logger.info(`  ${pending} pending unfollow decision${pending === 1 ? '' : 's'} — use Retry in Unfollow to resume`);
       }
       exec(`open ${url}`);
     });
