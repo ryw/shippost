@@ -7,7 +7,7 @@ import { FileSystemService } from '../dist/services/file-system.js';
 
 function service(model, temperature = 0.7) {
   const previous = process.env.ANTHROPIC_API_KEY;
-  process.env.ANTHROPIC_API_KEY = 'sk-ant-test';
+  process.env.ANTHROPIC_API_KEY = 'synthetic-gateway-credential';
   try { return new AnthropicService({ ...DEFAULT_CONFIG, llm: { provider: 'anthropic' }, anthropic: { model, apiKey: 'sk-ant-test', maxTokens: 4096 }, generation: { temperature } }); }
   finally { if (previous === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = previous; }
 }

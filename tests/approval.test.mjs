@@ -78,6 +78,7 @@ test('review requires approval before staging and handles retries and concurrent
         appendFileSync('worker-targets.txt', target + '\\n');
         if (target === 'blog' && !blogFailed) {
           blogFailed = true;
+          worker.stderr.emit('data', Buffer.from('✗ Synthetic provider authentication failure'));
           worker.emit('close', 1);
         } else {
           workFs.saveState(workFs.markFileProcessed(process.cwd() + '/input/' + file, 1, workFs.loadState(), target));
@@ -141,7 +142,7 @@ test('review requires approval before staging and handles retries and concurrent
       throw new Error('generation timeout');
     };
     assert.equal((await api('generate', { files: [combinedName] })).status, 202);
-    assert.match((await waitForGeneration()).error, /blog/);
+    assert.match((await waitForGeneration()).error, /blog:.*Synthetic provider authentication failure/);
     assert.deepEqual(readFileSync(join(dir, 'worker-targets.txt'), 'utf8').trim().split('\n'), ['social', 'blog', 'revisions']);
     assert.equal((await api('transcripts')).body.transcripts.length, 1);
     assert.equal((await api('generate', { files: [combinedName] })).status, 202);

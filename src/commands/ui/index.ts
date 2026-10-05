@@ -520,14 +520,21 @@ export async function uiCommand(options: UiOptions): Promise<void> {
                 job.log.push(`▸ ${target}: ${f}`);
                 await new Promise<void>((resolve, reject) => {
                   const child = spawn(process.execPath, [process.argv[1], 'work', '--all', '--files', f, '--target', target], { cwd });
+                  let output = '';
                   const onData = (chunk: Buffer) => {
+                    output += stripAnsi(chunk.toString());
                     stripAnsi(chunk.toString()).split('\n').forEach((line) => {
                       if (line.trim()) job.log.push(line.trimEnd());
                     });
                   };
                   child.stdout.on('data', onData);
                   child.stderr.on('data', onData);
-                  child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`ship work exited with code ${code}`))));
+                  child.on('close', (code) => {
+                    if (code === 0) return resolve();
+                    const reason = output.split('\n').map(line => line.trim())
+                      .find(line => /^✗|^Error:|^error:/i.test(line));
+                    reject(new Error(reason?.replace(/^✗\s*/, '') || `Generation stopped (exit ${code}).`));
+                  });
                   child.on('error', reject);
                 }).catch((error) => {
                   const message = `${target}: ${f}: ${(error as Error).message}`;
