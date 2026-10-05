@@ -99,11 +99,23 @@ export const PAGE = `<!doctype html>
   .gen-outputs { font-size: 12px; color: var(--muted); margin: 12px 0 0; }
   #genSync { margin-left: auto; }
   @media (max-width: 480px) { #genCard { padding: 22px; } #genCard h1 { font-size: 26px; } }
+  .app-nav { max-width: none; margin: 0; padding: 18px 32px; border-bottom: 1px solid var(--line); background: var(--card); }
+  main.wide { max-width: 1180px; }
+  .generate-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 28px; align-items: start; }
+  .generate-sidebar { position: sticky; top: 24px; }
+  .panel-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+  .panel-heading h2 { font-size: 14px; margin: 0; font-weight: 600; }
+  .panel-heading a, #queueCount { font-size: 12px; color: var(--muted); }
+  .queue-item { padding: 14px 0; border-top: 1px solid var(--line); }
+  .queue-title { font: 18px/1.35 Georgia, serif; overflow-wrap: anywhere; }
+  .queue-item small, .quiet { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+  .quiet { margin: 12px 0 0; }
+  .queue-panel #genStatusText { max-height: 110px; overflow: auto; }
+  @media (max-width: 800px) { .app-nav { padding: 16px; } .generate-layout { grid-template-columns: 1fr; } .generate-sidebar { position: static; } }
 </style>
 </head>
 <body>
-<main>
-  <nav>
+<nav class="app-nav">
     <span class="brand">ship</span>
     <a href="#generate" data-tab="generate">Generate</a>
     <a href="#review" data-tab="review">Review</a>
@@ -112,7 +124,8 @@ export const PAGE = `<!doctype html>
     <a href="#unfollow" data-tab="unfollow">Unfollow</a>
     <a href="#settings" data-tab="settings">Settings</a>
     <span id="progress"></span>
-  </nav>
+</nav>
+<main>
 
   <section class="view" id="view-settings">
     <div class="settings-intro"><h1>Your workspace</h1><p id="settingsIntro">Choose how you generate and where your drafts go.</p></div>
@@ -146,14 +159,12 @@ export const PAGE = `<!doctype html>
   </section>
 
   <section class="view" id="view-generate">
+    <div class="generate-layout"><div>
     <div class="toolbar">
       <select aria-label="Meeting date range" id="genRange" class="ghost"><option value="last_30_days">Past 30 days</option><option value="all">All dates</option></select>
       <button class="ghost" id="genSync">Sync Granola</button>
     </div>
     <p id="genSyncError" role="alert" style="display:none"></p>
-    <div class="toolbar" id="genStatus" style="display:none">
-      <span class="dim" id="genStatusText" style="color:var(--muted);font-size:13px"></span>
-    </div>
     <div class="card" id="genCard" style="display:none">
       <div class="meta" id="genWho"></div>
       <h1 id="genName"></h1>
@@ -170,6 +181,18 @@ export const PAGE = `<!doctype html>
     </div>
     <div class="empty" id="genDone" style="display:none">No transcripts waiting. 🎉</div>
     <pre class="log" id="genLog" style="display:none"></pre>
+    </div>
+    <aside class="generate-sidebar">
+      <section class="card queue-panel">
+        <div class="panel-heading"><h2>Processing</h2><span id="queueCount">0</span></div>
+        <div id="queueItems"><p class="quiet">Queue empty</p></div>
+        <div id="genStatus" style="display:none"><p id="genStatusText" class="quiet" role="status"></p></div>
+      </section>
+      <section class="card usage-panel">
+        <div class="panel-heading"><h2>Grok</h2><a href="https://grok.com/" target="_blank" rel="noopener noreferrer" title="Open Grok, then Settings → Usage">Plan usage ↗</a></div>
+        <p id="grokUsage" class="quiet">Plan allowance available in Grok.</p>
+      </section>
+    </aside></div>
   </section>
 
   <section class="view" id="view-reply">
@@ -260,6 +283,7 @@ const tabInits = { review: false, generate: false, reply: false, stats: false, u
 function showTab(name) {
   if (!Object.hasOwn(tabInits, name)) name = 'settings';
   activeTab = name;
+  document.querySelector('main').classList.toggle('wide', name === 'generate');
   document.querySelectorAll('.view').forEach((v) => v.classList.remove('active'));
   document.querySelectorAll('nav a').forEach((a) => a.classList.toggle('active', a.dataset.tab === name));
   $('view-' + name).classList.add('active');
@@ -492,6 +516,7 @@ function initGenerate() {
   $('genProcess').onclick = processTranscript;
   $('genSkip').onclick = skipTranscript;
   $('genSync').onclick = syncGranola;
+  refreshGrokUsage();
   watchGenerate(); // pick up any batch already running server-side
 }
 
@@ -593,21 +618,56 @@ function skipTranscript() {
   }).catch((e) => toast('⚠️ ' + e.message));
 }
 
+function renderProcessing(s) {
+  const items = new Map();
+  const labels = { social: 'Social', blog: 'Blog', revisions: 'Revisions' };
+  if (s.active) items.set(s.active, { active: true, targets: s.activeTarget ? [labels[s.activeTarget]] : [] });
+  for (const item of s.queue || []) {
+    if (!items.has(item.file)) items.set(item.file, { active: false, targets: [] });
+    items.get(item.file).targets.push(labels[item.target]);
+  }
+  $('queueCount').textContent = s.queue ? items.size : (s.running ? 'Active' : '0');
+  $('queueItems').replaceChildren();
+  for (const [file, item] of items) {
+    const row = document.createElement('div'); row.className = 'queue-item';
+    const title = document.createElement('div'); title.className = 'queue-title'; title.textContent = 'Meeting';
+    const state = document.createElement('small'); state.textContent = (item.active ? 'Processing' : 'Waiting') + (item.targets.length ? ' · ' + [...new Set(item.targets)].join(', ') : '');
+    row.append(title, state); $('queueItems').append(row);
+    api('GET', '/api/transcripts/content?name=' + encodeURIComponent(file)).then(r => {
+      const heading = r.content.match(/^# (.+)/);
+      title.textContent = heading ? heading[1] : file.replace(/\\.(txt|md)$/, '').replace(/_/g, ' ');
+    }).catch(() => { title.textContent = 'Meeting'; });
+  }
+  if (!s.queue && s.queued) {
+    const pending = document.createElement('p'); pending.className = 'quiet'; pending.textContent = s.queued + ' outputs waiting'; $('queueItems').append(pending);
+  }
+  if (!items.size && !s.queued) $('queueItems').textContent = 'Queue empty';
+}
+async function refreshGrokUsage() {
+  try {
+    const usage = await api('GET', '/api/grok/usage');
+    $('grokUsage').textContent = fmtN(usage.tokens) + ' tokens in Shippost';
+    $('grokUsage').title = 'Completed local calls only. This is not your subscription allowance. Open Grok → Settings → Usage for the remaining allowance and reset time.';
+  } catch { $('grokUsage').textContent = 'Plan allowance available in Grok.'; }
+}
+setInterval(() => { if (activeTab === 'generate') refreshGrokUsage(); }, 30000);
+
 function watchGenerate() {
   if (gpolling) return;
   gpolling = true;
   const tick = async () => {
     try {
       const s = await api('GET', '/api/generate/status');
+      renderProcessing(s);
       if (s.running) {
         $('genStatus').style.display = 'flex';
         const name = s.active ? s.active.replace(/\\.(txt|md)$/, '') : '…';
-        $('genStatusText').textContent = '⚙︎ processing ' + name + (s.queued ? ' · ' + s.queued + ' queued' : '') + ' — ' + s.lastLine;
+        $('genStatusText').textContent = s.lastLine.replace(/^\\s+/, '');
         setTimeout(tick, 2000);
       } else {
         gpolling = false;
         if ($('genStatus').style.display !== 'none') {
-          $('genStatusText').textContent = s.error ? '⚠️ ' + s.error : '✓ batch done — see the generation log for saved outputs';
+          $('genStatusText').textContent = s.error ? '⚠️ ' + s.error : 'Complete';
           tabInits.review = false;
           refreshTranscripts().catch(() => {});
         }
