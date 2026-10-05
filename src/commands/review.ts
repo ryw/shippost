@@ -1,6 +1,5 @@
 import { createInterface } from 'readline';
 import { FileSystemService } from '../services/file-system.js';
-import { TypefullyService } from '../services/typefully.js';
 import { logger } from '../utils/logger.js';
 import { isShippostProject } from '../utils/validation.js';
 import { NotInitializedError } from '../utils/errors.js';
@@ -35,19 +34,19 @@ function displayPostForReview(post: Post, remaining: number): void {
   logger.info('  ' + '─'.repeat(70));
 }
 
-async function promptForDecision(): Promise<'stage' | 'reject' | 'quit'> {
+async function promptForDecision(): Promise<'approve' | 'reject' | 'quit'> {
   return new Promise((resolve) => {
     const rl = createInterface({
       input: process.stdin,
       output: process.stdout,
     });
 
-    rl.question('\n(s)tage  (r)eject  (q)uit: ', (answer) => {
+    rl.question('\n(a)pprove  (r)eject  (q)uit: ', (answer) => {
       rl.close();
       const trimmed = answer.trim().toLowerCase();
 
-      if (trimmed === 's') {
-        resolve('stage');
+      if (trimmed === 'a') {
+        resolve('approve');
       } else if (trimmed === 'r') {
         resolve('reject');
       } else if (trimmed === 'q') {
@@ -63,16 +62,12 @@ async function promptForDecision(): Promise<'stage' | 'reject' | 'quit'> {
 export async function reviewCommand(options: ReviewOptions): Promise<void> {
   const cwd = process.cwd();
   const fs = new FileSystemService(cwd);
-  let typefully: TypefullyService | null = null;
 
   try {
     // Check if initialized
     if (!isShippostProject(cwd)) {
       throw new NotInitializedError();
     }
-
-    // Load config
-    const config = fs.loadConfig();
 
     // Load all posts
     const allPosts = fs.readPosts();
@@ -122,10 +117,11 @@ export async function reviewCommand(options: ReviewOptions): Promise<void> {
 
     if (postsToReview.length === 0) {
       const staged = allPosts.filter((p) => p.status === 'staged').length;
+      const approved = allPosts.filter((p) => p.status === 'approved').length;
       const rejected = allPosts.filter((p) => p.status === 'rejected').length;
 
       logger.success('No new posts to review!');
-      logger.info(`  Staged: ${staged} • Rejected: ${rejected}`);
+      logger.info(`  Approved: ${approved} • Staged: ${staged} • Rejected: ${rejected}`);
       return;
     }
 
@@ -139,7 +135,7 @@ export async function reviewCommand(options: ReviewOptions): Promise<void> {
 
     // Review loop
     let reviewed = 0;
-    let staged = 0;
+    let approved = 0;
     let rejected = 0;
 
     for (let i = 0; i < postsToReview.length; i++) {
@@ -153,38 +149,21 @@ export async function reviewCommand(options: ReviewOptions): Promise<void> {
       if (decision === 'quit') {
         logger.blank();
         logger.info(`Session ended. Reviewed ${reviewed} posts`);
-        logger.info(`  Staged: ${staged} • Rejected: ${rejected}`);
+        logger.info(`  Approved: ${approved} • Rejected: ${rejected}`);
         logger.info(`${remaining} posts remaining to review`);
         return;
       }
 
       // Update post status
-      if (decision === 'stage') {
-        post.status = 'staged';
+      if (decision === 'approve') {
+        post.status = 'approved';
       } else {
         post.status = 'rejected';
       }
 
-      // If staging, send to Typefully
-      if (decision === 'stage') {
-        try {
-          // Lazy init Typefully service
-          if (!typefully) {
-            typefully = new TypefullyService(config.typefully?.socialSetId);
-          }
-          const draft = await typefully.createDraft(post.content, post.platform || 'x');
-          post.metadata.typefullyDraftId = draft.id;
-          staged++;
-          logger.success(`Staged → Typefully [${remaining - 1} remaining]`);
-          if (draft.share_url) {
-            logger.info(`  ${draft.share_url}`);
-          }
-        } catch (error) {
-          logger.error(`Failed to stage: ${(error as Error).message}`);
-          // Revert status on failure
-          post.status = 'new';
-          continue;
-        }
+      if (decision === 'approve') {
+        approved++;
+        logger.success(`Approved [${remaining - 1} remaining]`);
       } else {
         rejected++;
         logger.error(`Rejected [${remaining - 1} remaining]`);
@@ -199,7 +178,7 @@ export async function reviewCommand(options: ReviewOptions): Promise<void> {
     // Final summary
     logger.blank();
     logger.success('Review complete!');
-    logger.info(`  Staged: ${staged} • Rejected: ${rejected}`);
+    logger.info(`  Approved: ${approved} • Rejected: ${rejected}`);
   } catch (error) {
     logger.blank();
     logger.error((error as Error).message);

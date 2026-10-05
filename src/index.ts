@@ -69,7 +69,7 @@ program
 
 program
   .command('review')
-  .description('Review posts one-by-one and mark as keep/reject')
+  .description('Review posts one-by-one and approve or reject')
   .option('--min-score <score>', 'Only review posts with score >= N', parseInt)
   .option('--web', 'Review in the local web UI instead of the terminal')
   .option('--port <port>', 'Port for --web (default: 4747)', parseInt)

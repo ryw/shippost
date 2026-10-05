@@ -33,7 +33,7 @@ export interface Post {
     typefullyDraftId?: string;
   };
   timestamp: string;
-  status: 'new' | 'keep' | 'staged' | 'published' | 'rejected';
+  status: 'new' | 'keep' | 'approved' | 'staged' | 'published' | 'rejected';
 }
 
 export interface PostGenerationResult {

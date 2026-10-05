@@ -81,7 +81,7 @@ cp ~/meeting-notes.txt input/
 # Generate posts
 ship work
 
-# Review and stage to Typefully
+# Review generated posts, then stage approved posts to Typefully
 ship review
 ```
 
@@ -99,7 +99,7 @@ That's it! Your posts are in `posts.jsonl`, ready for review.
 | `ship work` | Generate posts from input files |
 | `ship posts` | View generated posts |
 | `ship ui` | Local web app for the whole pipeline |
-| `ship review` | Interactively review and stage posts |
+| `ship review` | Interactively approve/reject generated posts |
 | `ship analyze-x` | Generate style guide from your tweets |
 | `ship reply` | Find and post replies on X |
 | `ship x-status` | Check X API rate limits |
@@ -211,7 +211,7 @@ ship ui --min-score 60          # Filter the review queue
 
 **Tabs:**
 - **Generate** — card per unprocessed transcript with attendees and a one-line summary; `p` process / `k` skip. Processing queues sequentially with a live status line; skips persist.
-- **Review** — score-sorted queue; `s` stage, `r` reject, `e` edit, `k` skip, `⌘s` stage while editing. Select text and hit `tab` to have the LLM rewrite just that span in your voice. Edits persist per post until decided.
+- **Review** — score-sorted queue; `a` approve, `r` reject, `e` edit, `k` skip, `⌘s` approve while editing. Select text and hit `tab` to have the LLM rewrite just that span in your voice. Edits persist per post until decided. Typefully staging is a separate action for approved posts.
 - **Reply** — scan your timeline for reply opportunities, edit inline, post + like or skip.
 - **Stats** — account tiles, 7-day metrics, 90-day goal progress, top post.
 - **Unfollow** — candidates ranked by LLM relevance to your interests plus quality signals, protected by a feed-presence check and a whitelist. Unfollow decisions persist to disk and retry automatically if you hit X API limits.
@@ -222,7 +222,7 @@ The server is localhost-only. Jobs (generation, scans, unfollows) run server-sid
 
 ### `ship review`
 
-Interactively review posts and decide their fate. Posts are sorted by banger score (highest first).
+Interactively review posts and approve or reject them. Approved posts can be staged to Typefully from `ship ui` after content review.
 
 ```bash
 ship review                     # Review all new posts
@@ -230,14 +230,14 @@ ship review --min-score 70      # Only high-quality posts
 ```
 
 **Actions during review:**
-- `s` — Stage to Typefully (creates draft)
-- `Enter` — Keep for later
-- `n` — Reject
+- `a` — Approve for staging
+- `r` — Reject
 - `q` — Quit
 
 **Post statuses:**
 - `new` — Not yet reviewed
 - `keep` — Saved for later
+- `approved` — Content-reviewed and ready to stage
 - `staged` — Sent to Typefully
 - `rejected` — Filtered out
 - `published` — Reserved for future
@@ -484,11 +484,14 @@ Stage posts directly to [Typefully](https://typefully.com/) drafts.
 ### Usage
 
 ```bash
-# Review posts and stage the best ones
+# Review posts and approve the best ones
 ship review --min-score 70
+
+# Stage approved posts from the web UI
+ship ui
 ```
 
-Press `s` during review to stage a post. The draft URL is displayed for quick access.
+Approve posts during review, then use the Review tab's "Stage next approved" button to create Typefully drafts. The draft URL is displayed for quick access.
 
 > **Note:** Posts are created as drafts, not published. Requires Typefully Pro plan.
 

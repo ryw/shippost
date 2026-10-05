@@ -89,6 +89,10 @@ export const PAGE = `<!doctype html>
   </nav>
 
   <section class="view" id="view-review">
+    <div class="toolbar">
+      <button class="ghost" id="stageApproved">Stage next approved</button>
+      <span class="dim" id="approvedNote" style="color:var(--muted);font-size:13px"></span>
+    </div>
     <div class="card" id="card">
       <div class="meta">
         <span class="badge" id="platform"></span>
@@ -157,13 +161,13 @@ export const PAGE = `<!doctype html>
 
 <footer>
 <div class="keys" id="keysReview">
-  <span><kbd>s</kbd> stage</span>
+  <span><kbd>a</kbd> approve</span>
   <span><kbd>r</kbd> reject</span>
   <span><kbd>e</kbd> edit</span>
   <span><kbd>k</kbd> skip</span>
 </div>
 <div class="keys" id="keysEdit" style="display:none">
-  <span><kbd>⌘s</kbd> stage</span>
+  <span><kbd>⌘s</kbd> approve</span>
   <span>select text → <kbd>tab</kbd> ask fable</span>
   <span><kbd>esc</kbd> done</span>
 </div>
@@ -226,6 +230,7 @@ function showTab(name) {
     ({ review: initReview, generate: initGenerate, reply: initReply, stats: initStats, unfollow: initUnfollow })[name]();
   } else if (name === 'review') {
     showPost();
+    refreshApproved();
   } else if (name === 'generate') {
     showTranscript();
   }
@@ -237,6 +242,15 @@ let queue = [], idx = 0, busy = false, sel = null;
 
 function initReview() {
   api('GET', '/api/posts').then((d) => { queue = d.posts; showPost(); }).catch((e) => toast('⚠️ ' + e.message));
+  $('stageApproved').onclick = stageApproved;
+  refreshApproved();
+}
+
+function refreshApproved() {
+  api('GET', '/api/approved-posts').then((d) => {
+    $('approvedNote').textContent = d.posts.length ? d.posts.length + ' approved, not staged' : 'No approved posts waiting';
+    $('stageApproved').disabled = d.posts.length === 0;
+  }).catch(() => {});
 }
 
 function showPost() {
@@ -276,14 +290,28 @@ async function decide(action) {
   if (!p) return;
   busy = true;
   try {
-    const body = await api('POST', '/api/decision', { id: p.id, action, content: $('content').value });
+    await api('POST', '/api/decision', { id: p.id, action, content: $('content').value });
     localStorage.removeItem('draft:' + p.id);
-    toast(action === 'stage'
-      ? (body.share_url ? 'Staged → <a href="' + body.share_url + '" target="_blank">Typefully</a>' : 'Staged → Typefully')
-      : 'Rejected');
+    toast(action === 'approve' ? 'Approved for staging' : 'Rejected');
     queue.splice(idx, 1);
     showPost();
+    refreshApproved();
   } catch (e) { toast('⚠️ ' + e.message); }
+  busy = false;
+}
+
+async function stageApproved() {
+  if (busy) return;
+  busy = true;
+  $('stageApproved').disabled = true;
+  try {
+    const body = await api('POST', '/api/stage-approved');
+    toast(body.share_url ? 'Staged → <a href="' + body.share_url + '" target="_blank">Typefully</a>' : 'Staged → Typefully');
+    refreshApproved();
+  } catch (e) {
+    toast('⚠️ ' + e.message);
+    refreshApproved();
+  }
   busy = false;
 }
 
@@ -352,7 +380,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if (activeTab !== 'review') return;
-  if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); decide('stage'); return; }
+  if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); decide('approve'); return; }
   if ((e.metaKey || e.ctrlKey) && e.key === 'r' && e.shiftKey) { e.preventDefault(); decide('reject'); return; }
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (document.activeElement === $('askInput')) {
@@ -371,7 +399,7 @@ document.addEventListener('keydown', (e) => {
     }
     return;
   }
-  if (e.key === 's') decide('stage');
+  if (e.key === 'a') decide('approve');
   else if (e.key === 'r') decide('reject');
   else if (e.key === 'k') { idx = (idx + 1) % Math.max(queue.length, 1); showPost(); }
   else if (e.key === 'e') { e.preventDefault(); $('content').focus(); }
