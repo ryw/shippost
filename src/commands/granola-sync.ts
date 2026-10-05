@@ -1,3 +1,4 @@
+import { syncGranolaAPI } from '../services/granola-api.js';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { basename, join } from 'path';
 import { homedir } from 'os';
@@ -42,7 +43,7 @@ const GRANOLA_API_HEADERS = {
 export function loadGranolaRefreshToken(): string {
   const authPath = join(GRANOLA_DIR, 'supabase.json');
   if (!existsSync(authPath)) {
-    throw new Error('Granola credentials not found. Make sure the Granola app is installed and you are logged in.');
+    throw new Error('Granola desktop credentials are missing on this computer. Sync currently requires the Granola macOS app to be installed and signed in on the same computer running Shippost. Your LLM and Typefully keys do not authorize Granola.');
   }
 
   const authData = JSON.parse(readFileSync(authPath, 'utf-8'));
@@ -220,6 +221,10 @@ export async function granolaSyncCommand(options: GranolaSyncOptions): Promise<v
     }
 
     logger.section('Granola Sync');
+    if (process.env.GRANOLA_API_KEY) {
+      await syncGranolaAPI(cwd, process.env.GRANOLA_API_KEY, line => logger.info(line), options);
+      return;
+    }
 
     // Load Granola data
     logger.step('Loading Granola credentials...');

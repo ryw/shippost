@@ -1,3 +1,4 @@
+import { assertXEnabled } from './x-access.js';
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { TwitterApi } from 'twitter-api-v2';
 import open from 'open';
@@ -53,6 +54,7 @@ export class XAuthService {
   private tokensPath: string;
 
   constructor(cwd: string, clientId: string, clientSecret?: string) {
+    assertXEnabled(cwd);
     this.cwd = cwd;
     this.clientId = clientId;
     this.clientSecret = clientSecret || process.env.TWITTER_CLIENT_SECRET;

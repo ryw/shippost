@@ -1,17 +1,17 @@
+import { syncGranolaAPI } from '../../services/granola-api.js';
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { spawn, exec } from 'child_process';
 import { readFileSync, existsSync, readdirSync, statSync } from 'fs';
 import { join, basename } from 'path';
 import { FileSystemService } from '../../services/file-system.js';
 import { TypefullyService } from '../../services/typefully.js';
-import { AnthropicService } from '../../services/anthropic.js';
+import type { LLMService } from '../../services/llm-service.js';
 import { XAuthService } from '../../services/x-auth.js';
 import { XApiService, RateLimitError } from '../../services/x-api.js';
 import { createLLMService } from '../../services/llm-factory.js';
 import { logger } from '../../utils/logger.js';
 import { isShippostProject } from '../../utils/validation.js';
-import { NotInitializedError } from '../../utils/errors.js';
-import { isGenerationTarget, type GenerationTarget } from '../../types/state.js';
+import { GENERATION_TARGETS, isGenerationTarget, type GenerationTarget } from '../../types/state.js';
 import type { Post } from '../../types/post.js';
 import {
   gatherReplyTweets,
@@ -41,6 +41,9 @@ import {
   refreshAccessToken,
   fetchGranolaDocuments,
 } from '../granola-sync.js';
+import { randomUUID } from 'crypto';
+import { getSettings, saveSettings } from '../../services/settings.js';
+import { transcriptDate, inLast30Days } from '../../utils/transcript-date.js';
 import { PAGE } from './page.js';
 import { isRecord, parseJsonFromResponse } from '../../utils/json-parser.js';
 
@@ -85,7 +88,7 @@ function isRelevanceScoreResults(value: unknown): value is RelevanceScoreResult[
 }
 
 interface TranscriptMeta {
-  [filename: string]: { attendees?: string[]; summary?: string; skipped?: boolean; skippedTargets?: Partial<Record<GenerationTarget, boolean>> };
+  [filename: string]: { attendees?: string[]; summary?: string; meetingDate?: string; skipped?: boolean; skippedTargets?: Partial<Record<GenerationTarget, boolean>> };
 }
 
 interface UiOptions {
@@ -107,7 +110,7 @@ export async function uiCommand(options: UiOptions): Promise<void> {
   const fs = new FileSystemService(cwd);
   let typefully: TypefullyService | null = null;
   let stagingApproved = false;
-  let anthropic: AnthropicService | null = null;
+  let rewriteLLM: LLMService | null = null;
   const jobs: Record<string, Job> = {};
   const genQueue: Array<{ file: string; target: GenerationTarget }> = [];
   let genActive: string | null = null;
@@ -175,6 +178,7 @@ export async function uiCommand(options: UiOptions): Promise<void> {
         for (const [docId, v] of Object.entries(syncState.syncedDocuments || {})) {
           docToFile[docId] = (v as { filename: string }).filename;
         }
+        if (process.env.GRANOLA_API_KEY) return {}; // Official imports persist attendee metadata locally.
         const token = await refreshAccessToken(loadGranolaRefreshToken());
         const docs = await fetchGranolaDocuments(token);
         const out: Record<string, string[]> = {};
@@ -218,15 +222,12 @@ export async function uiCommand(options: UiOptions): Promise<void> {
   };
 
   try {
-    if (!isShippostProject(cwd)) {
-      throw new NotInitializedError();
-    }
-    const config = fs.loadConfig();
+    const settingsToken = randomUUID();
     const port = options.port || 4747;
 
     const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
       const send = (status: number, body: string, type = 'application/json') => {
-        res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store' });
+        res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'same-origin' });
         res.end(body);
       };
       const readBody = async (): Promise<Record<string, unknown>> => {
@@ -238,7 +239,35 @@ export async function uiCommand(options: UiOptions): Promise<void> {
       const route = `${req.method} ${url.pathname}`;
 
       try {
-        if (route === 'GET /') return send(200, PAGE, 'text/html');
+        // Local-only settings must not be readable via DNS rebinding or cross-origin requests.
+        const hosts = [`127.0.0.1:${port}`, `localhost:${port}`];
+        if (!hosts.includes(req.headers.host || '') || (req.headers.origin && !hosts.some(host => req.headers.origin === `http://${host}`))) {
+          return send(403, JSON.stringify({ error: 'Local same-origin access required' }));
+        }
+        if (route === 'GET /') return send(200, PAGE.replace('__SHIPPOST_SETTINGS_TOKEN__', settingsToken), 'text/html');
+        if (route === 'GET /api/settings') return send(200, JSON.stringify(getSettings(cwd)));
+        if (route === 'POST /api/settings' || route === 'POST /api/settings/test') {
+          if (req.headers['x-settings-token'] !== settingsToken) return send(403, JSON.stringify({ error: 'Reload the page before changing settings' }));
+          if (stagingApproved || Object.values(jobs).some(job => job.running)) return send(409, JSON.stringify({ error: 'Wait for running jobs to finish before changing or testing settings' }));
+          if (route === 'POST /api/settings/test') {
+            try {
+              await createLLMService(fs.loadConfig()).ensureAvailable();
+              return send(200, JSON.stringify({ ok: true }));
+            } catch {
+              return send(400, JSON.stringify({ error: 'Could not connect. Check the saved provider, server URL, model, and API key.' }));
+            }
+          }
+          try {
+            saveSettings(cwd, await readBody());
+            typefully = null;
+            rewriteLLM = null;
+            return send(200, JSON.stringify(getSettings(cwd)));
+          } catch (error) {
+            return send(400, JSON.stringify({ error: error instanceof SyntaxError ? 'Invalid settings JSON' : (error as Error).message }));
+          }
+        }
+        if (!isShippostProject(cwd)) return send(409, JSON.stringify({ error: 'Open Settings to finish workspace setup' }));
+        const config = fs.loadConfig();
 
         // ── jobs ─────────────────────────────────────────────────────
         if (req.method === 'GET' && url.pathname.startsWith('/api/job/')) {
@@ -332,7 +361,7 @@ export async function uiCommand(options: UiOptions): Promise<void> {
           if (typeof content !== 'string' || typeof instruction !== 'string' || !(end > start)) {
             return send(400, JSON.stringify({ error: 'need content, selection range, instruction' }));
           }
-          if (!anthropic) anthropic = new AnthropicService(config);
+          if (!rewriteLLM) rewriteLLM = createLLMService(config);
           let style = '';
           try {
             style = readFileSync(join(cwd, 'prompts', 'style.md'), 'utf-8');
@@ -346,7 +375,7 @@ export async function uiCommand(options: UiOptions): Promise<void> {
             `Instruction: ${instruction}`,
             `Rewrite ONLY the selected span per the instruction, matching the surrounding voice. Never use em dashes. Return ONLY the replacement text for the span — no quotes around it, no preamble, no explanation.`,
           ].filter(Boolean).join('\n\n');
-          let replacement = (await anthropic.generate(prompt)).trim();
+          let replacement = (await rewriteLLM.generate(prompt)).trim();
           replacement = replacement.replace(/^(Here('|’)s.*?:|Replacement:)\s*/i, '').trim();
           if (replacement.length >= 2 && replacement.startsWith('"') && replacement.endsWith('"') && !selection.startsWith('"')) {
             replacement = replacement.slice(1, -1);
@@ -356,8 +385,12 @@ export async function uiCommand(options: UiOptions): Promise<void> {
 
         // ── generate ─────────────────────────────────────────────────
         if (route === 'GET /api/transcripts') {
-          const target = url.searchParams.get('target') || 'social';
-          if (!isGenerationTarget(target)) return send(400, JSON.stringify({ error: 'invalid target' }));
+          const target = url.searchParams.get('target') || 'all';
+          if (target !== 'all' && !isGenerationTarget(target)) return send(400, JSON.stringify({ error: 'invalid target' }));
+          const targets: readonly GenerationTarget[] = target === 'all' ? GENERATION_TARGETS : [target];
+          const range = url.searchParams.get('range') || 'last_30_days';
+          if (range !== 'last_30_days' && range !== 'all') return send(400, JSON.stringify({ error: 'invalid date range' }));
+          const now = new Date();
           const inputDir = join(cwd, 'input');
           const state = fs.loadState();
           const files = existsSync(inputDir)
@@ -365,9 +398,10 @@ export async function uiCommand(options: UiOptions): Promise<void> {
             : [];
           const attendees = await granolaAttendees();
           const meta = loadMeta();
-          const unprocessed = files
-            .filter((f) => !fs.isFileProcessed(join(inputDir, f), state, target))
-            .filter((f) => !meta[f]?.skipped && !meta[f]?.skippedTargets?.[target])
+          const recentFiles = files.filter(f => inLast30Days(transcriptDate(f, meta[f]?.meetingDate), now));
+          const unprocessed = (range === 'all' ? files : recentFiles)
+            .filter((f) => !meta[f]?.skipped && targets.some(t =>
+              !fs.isFileProcessed(join(inputDir, f), state, t) && !meta[f]?.skippedTargets?.[t]))
             .filter((f) => f !== genActive && !genQueue.some((item) => item.file === f))
             .map((f) => {
               const st = statSync(join(inputDir, f));
@@ -375,11 +409,12 @@ export async function uiCommand(options: UiOptions): Promise<void> {
                 name: f,
                 size: st.size,
                 modified: st.mtime.toISOString(),
+                meetingDate: transcriptDate(f, meta[f]?.meetingDate) || null,
                 attendees: attendees[f] || meta[f]?.attendees || [],
                 summary: meta[f]?.summary || null,
               };
             })
-            .sort((a, b) => b.name.localeCompare(a.name));
+            .sort((a, b) => (b.meetingDate || '').localeCompare(a.meetingDate || '') || b.name.localeCompare(a.name));
           // Persist attendees so they survive Granola auth hiccups
           let dirty = false;
           for (const t of unprocessed) {
@@ -389,7 +424,7 @@ export async function uiCommand(options: UiOptions): Promise<void> {
             }
           }
           if (dirty) await saveMeta(meta);
-          return send(200, JSON.stringify({ transcripts: unprocessed }));
+          return send(200, JSON.stringify({ transcripts: unprocessed, range, matchingFiles: range === 'all' ? files.length : recentFiles.length, outsideRange: range === 'all' ? 0 : files.length - recentFiles.length }));
         }
 
         if (req.method === 'GET' && url.pathname === '/api/transcripts/content') {
@@ -400,11 +435,12 @@ export async function uiCommand(options: UiOptions): Promise<void> {
         }
 
         if (route === 'POST /api/transcripts/skip') {
-          const { name, target = 'social' } = await readBody();
-          if (!isGenerationTarget(target)) return send(400, JSON.stringify({ error: 'invalid target' }));
+          const { name, target = 'all' } = await readBody();
+          if (target !== 'all' && !isGenerationTarget(target)) return send(400, JSON.stringify({ error: 'invalid target' }));
+          const targets: readonly GenerationTarget[] = target === 'all' ? GENERATION_TARGETS : [target];
           const key = basename(String(name));
           const meta = loadMeta();
-          meta[key] = { ...meta[key], skippedTargets: { ...meta[key]?.skippedTargets, [target]: true } };
+          meta[key] = { ...meta[key], skippedTargets: { ...meta[key]?.skippedTargets, ...Object.fromEntries(targets.map(t => [t, true])) } };
           await saveMeta(meta);
           return send(200, JSON.stringify({ ok: true }));
         }
@@ -448,8 +484,9 @@ export async function uiCommand(options: UiOptions): Promise<void> {
         }
 
         if (route === 'POST /api/generate') {
-          const { files, target = 'social' } = await readBody();
-          if (!isGenerationTarget(target)) return send(400, JSON.stringify({ error: 'invalid target' }));
+          const { files, target = 'all' } = await readBody();
+          if (target !== 'all' && !isGenerationTarget(target)) return send(400, JSON.stringify({ error: 'invalid target' }));
+          const targets: readonly GenerationTarget[] = target === 'all' ? GENERATION_TARGETS : [target];
           if (!Array.isArray(files) || files.length === 0) {
             return send(400, JSON.stringify({ error: 'no files selected' }));
           }
@@ -467,9 +504,15 @@ export async function uiCommand(options: UiOptions): Promise<void> {
             }
           });
           if (accepted.length === 0) return send(409, JSON.stringify({ error: 'already processing' }));
-          genQueue.push(...accepted.map((file) => ({ file, target })));
+          const state = fs.loadState();
+          const meta = loadMeta();
+          genQueue.push(...[...new Set(accepted)].flatMap(file => targets
+            .filter(t => !meta[file]?.skipped && !meta[file]?.skippedTargets?.[t] &&
+              !fs.isFileProcessed(join(cwd, 'input', file), state, t))
+            .map(target => ({ file, target }))));
           startJob('generate', async (job) => {
             let item: { file: string; target: GenerationTarget } | undefined;
+            const failures: string[] = [];
             try {
               while ((item = genQueue.shift())) {
                 const { file: f, target } = item;
@@ -486,8 +529,13 @@ export async function uiCommand(options: UiOptions): Promise<void> {
                   child.stderr.on('data', onData);
                   child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`ship work exited with code ${code}`))));
                   child.on('error', reject);
+                }).catch((error) => {
+                  const message = `${target}: ${f}: ${(error as Error).message}`;
+                  failures.push(message);
+                  job.log.push(`✗ ${message}`);
                 });
               }
+              if (failures.length) throw new Error(failures.join('; '));
             } catch (error) {
               // Return unstarted work to the selectable queue after a failure.
               genQueue.length = 0;
@@ -501,19 +549,12 @@ export async function uiCommand(options: UiOptions): Promise<void> {
 
         if (route === 'POST /api/granola/sync') {
           const started = startJob('granola-sync', async (job) => {
-            await new Promise<void>((resolve, reject) => {
-              const child = spawn(process.execPath, [process.argv[1], 'granola-sync'], { cwd });
-              const onData = (chunk: Buffer) => {
-                stripAnsi(chunk.toString()).split('\n').forEach((line) => {
-                  if (line.trim()) job.log.push(line.trimEnd());
-                });
-              };
-              child.stdout.on('data', onData);
-              child.stderr.on('data', onData);
-              child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`granola-sync exited with code ${code}`))));
-              child.on('error', reject);
-            });
-            attendeesPromise = null; // new docs — refetch attendee names on next queue load
+            if (process.env.GRANOLA_API_KEY) {
+              await syncGranolaAPI(cwd, process.env.GRANOLA_API_KEY, line => job.log.push(line));
+              attendeesPromise = null;
+              return;
+            }
+            throw new Error('Save your Granola API key in Settings → Credentials, then sync again.');
           });
           return send(202, JSON.stringify({ started }));
         }
@@ -818,9 +859,8 @@ export async function uiCommand(options: UiOptions): Promise<void> {
       logger.success(`ship ui running at ${url}`);
       logger.info('  Review • Generate • Reply • Stats • Unfollow — Ctrl-C here when done');
       const pending = Object.keys(loadPendingUnfollows(cwd)).length;
-      if (pending > 0) {
-        logger.info(`  ${pending} pending unfollow decision${pending === 1 ? '' : 's'} — retrying`);
-        runUnfollowWorker();
+      if (pending > 0 && isShippostProject(cwd)) {
+        logger.info(`  ${pending} pending unfollow decision${pending === 1 ? '' : 's'} — use Retry in Unfollow to resume`);
       }
       exec(`open ${url}`);
     });

@@ -13,7 +13,7 @@ export const PAGE = `<!doctype html>
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
   main { max-width: 640px; margin: 0 auto; padding: 32px 20px 120px; }
-  nav { display: flex; gap: 4px; margin-bottom: 24px; align-items: baseline; }
+  nav { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 24px; align-items: baseline; }
   nav a { color: var(--muted); text-decoration: none; padding: 4px 10px; border-radius: 7px; font-weight: 500; }
   nav a.active { color: var(--fg); background: var(--card); border: 1px solid var(--line); }
   nav .brand { font-weight: 700; margin-right: 10px; }
@@ -75,6 +75,19 @@ export const PAGE = `<!doctype html>
   .actions { display: flex; gap: 10px; margin-top: 14px; }
   .view { display: none; }
   .view.active { display: block; }
+  .settings-intro { margin-bottom: 24px; }
+  .settings-intro h1 { font: 28px Georgia, serif; margin: 0 0 8px; }
+  .settings-intro p { color: var(--muted); margin: 0; }
+  .settings-group h2 { font-size: 16px; margin: 0 0 18px; }
+  .settings-field { display: grid; gap: 6px; margin: 14px 0; font-size: 14px; }
+  .settings-field input:not([type=checkbox]), .settings-field select { width: 100%; min-width: 0; padding: 10px 12px; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
+  .settings-field input:focus-visible, .settings-field select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .settings-field small { color: var(--muted); overflow-wrap: anywhere; }
+  .settings-field[hidden] { display: none; }
+  .settings-field.check { display: flex; align-items: center; gap: 10px; }
+  .settings-actions { position: sticky; bottom: 0; padding: 16px 0; background: var(--bg); display: flex; gap: 10px; flex-wrap: wrap; border-top: 1px solid var(--line); }
+  #settingsStatus { flex-basis: 100%; margin: 0; overflow-wrap: anywhere; }
+  #settingsStatus:empty { display: none; }
   input[type=checkbox] { accent-color: var(--accent); width: 15px; height: 15px; }
 </style>
 </head>
@@ -87,9 +100,17 @@ export const PAGE = `<!doctype html>
     <a href="#reply" data-tab="reply">Reply</a>
     <a href="#stats" data-tab="stats">Stats</a>
     <a href="#unfollow" data-tab="unfollow">Unfollow</a>
+    <a href="#settings" data-tab="settings">Settings</a>
     <span id="progress"></span>
   </nav>
 
+  <section class="view" id="view-settings">
+    <div class="settings-intro"><h1>Your workspace</h1><p id="settingsIntro">Choose how you generate and where your drafts go.</p></div>
+    <form id="settingsForm">
+      <div id="settingsFields"></div>
+      <div class="settings-actions"><p id="settingsStatus" role="status" aria-live="polite"></p><button type="submit" class="primary" id="settingsSave">Save settings</button><button type="button" class="ghost" id="settingsTest">Test saved LLM connection</button></div>
+    </form>
+  </section>
   <section class="view" id="view-review">
     <div class="toolbar">
       <button class="ghost" id="stageApproved">Stage next approved</button>
@@ -116,15 +137,13 @@ export const PAGE = `<!doctype html>
 
   <section class="view" id="view-generate">
     <div class="toolbar">
-      <label for="genTarget">Generate</label>
-      <select id="genTarget" class="ghost">
-        <option value="social">Social posts</option>
-        <option value="blog">Blog drafts</option>
-        <option value="revisions">Article revision proposals</option>
-      </select>
+      <label for="genRange">Meetings</label>
+      <select id="genRange" class="ghost"><option value="last_30_days">Past 30 days</option><option value="all">All dates</option></select>
       <button class="ghost" id="genSync">Sync Granola</button>
     </div>
-    <p id="genTargetNote" style="color:var(--muted);font-size:13px">Social posts go to Review for approval.</p>
+    <p id="genSyncError" role="alert" style="display:none"></p>
+    <p id="genRangeNote" style="color:var(--muted);font-size:13px"></p>
+    <p id="genTargetNote" style="color:var(--muted);font-size:13px">Generate social posts, blog drafts, and article revision proposals together. Completed outputs are skipped on retry.</p>
     <div class="toolbar" id="genStatus" style="display:none">
       <span class="dim" id="genStatusText" style="color:var(--muted);font-size:13px"></span>
     </div>
@@ -137,7 +156,7 @@ export const PAGE = `<!doctype html>
       <div id="genSummary" style="font-style:italic;color:var(--muted);margin-bottom:12px"></div>
       <div id="genText" class="serif" style="max-height:340px;overflow-y:auto;white-space:pre-wrap;border-top:1px solid var(--line);padding-top:12px"></div>
       <div class="actions">
-        <button class="primary" id="genProcess">Process</button>
+        <button class="primary" id="genProcess">Generate all 3</button>
         <button class="ghost" id="genSkip">Skip</button>
       </div>
     </div>
@@ -200,7 +219,7 @@ function toast(html) {
 async function api(method, path, body) {
   const res = await fetch(path, {
     method,
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    headers: body ? { 'Content-Type': 'application/json', 'X-Settings-Token': '__SHIPPOST_SETTINGS_TOKEN__' } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await res.json();
@@ -228,9 +247,10 @@ function pollJob(name, logEl, onDone) {
 
 // ── tabs ──────────────────────────────────────────────────────────────
 let activeTab = 'review';
-const tabInits = { review: false, generate: false, reply: false, stats: false, unfollow: false };
+const tabInits = { review: false, generate: false, reply: false, stats: false, unfollow: false, settings: false };
 
 function showTab(name) {
+  if (!Object.hasOwn(tabInits, name)) name = 'settings';
   activeTab = name;
   document.querySelectorAll('.view').forEach((v) => v.classList.remove('active'));
   document.querySelectorAll('nav a').forEach((a) => a.classList.toggle('active', a.dataset.tab === name));
@@ -239,7 +259,7 @@ function showTab(name) {
   document.querySelector('footer').style.display = name === 'review' ? 'block' : 'none';
   if (!tabInits[name]) {
     tabInits[name] = true;
-    ({ review: initReview, generate: initGenerate, reply: initReply, stats: initStats, unfollow: initUnfollow })[name]();
+    ({ review: initReview, generate: initGenerate, reply: initReply, stats: initStats, unfollow: initUnfollow, settings: initSettings })[name]();
   } else if (name === 'review') {
     showPost();
     refreshApproved();
@@ -437,26 +457,29 @@ $('content').addEventListener('input', () => {
 // ── generate ──────────────────────────────────────────────────────────
 let gqueue = [], gpolling = false;
 
-function generateTarget() { return $('genTarget').value; }
+function generateRange() { return $('genRange').value; }
+function updateRangeNote(data) {
+  $('genRangeNote').textContent = data.range === 'all' ? 'Showing all meeting dates, including undated sources.' : 'Past 30 days by meeting date (UTC).' + (data.outsideRange ? ' ' + data.outsideRange + ' older, future, or undated sources hidden.' : '');
+  $('genDone').textContent = data.range !== 'all' && !data.matchingFiles ? 'No meetings from the past 30 days have been imported. Import recent meetings to begin.' : 'No unprocessed transcripts in this date range.';
+}
+
+function generateTarget() { return 'all'; }
 
 async function refreshTranscripts() {
   const target = generateTarget();
-  const d = await api('GET', '/api/transcripts?target=' + target);
-  if (target !== generateTarget()) return;
+  const range = generateRange();
+  const d = await api('GET', '/api/transcripts?target=' + target + '&range=' + range);
+  if (target !== generateTarget() || range !== generateRange()) return;
+  updateRangeNote(d);
   gqueue = d.transcripts;
   showTranscript();
 }
 
 function initGenerate() {
   refreshTranscripts().catch((e) => toast('⚠️ ' + e.message));
-  $('genTarget').onchange = () => {
+  $('genRange').onchange = () => {
     gqueue = [];
     showTranscript();
-    $('genTargetNote').textContent = {
-      social: 'Social posts go to Review for approval.',
-      blog: 'Creates blog drafts for review. Existing articles remain unchanged.',
-      revisions: 'Saves proposed changes in .shippost-revisions/ for manual review and application.'
-    }[generateTarget()];
     refreshTranscripts().catch((e) => toast('⚠️ ' + e.message));
   };
   $('genProcess').onclick = processTranscript;
@@ -468,34 +491,42 @@ function initGenerate() {
 // Pull new Granola transcripts on explicit request so fresh meetings show up
 // without a manual \`ship granola-sync\`.
 function syncGranola() {
+  $('genSyncError').style.display = 'none';
   api('POST', '/api/granola/sync').then(() => {
     const tick = async () => {
       const j = await api('GET', '/api/job/granola-sync');
       if (j.running) {
         if (!gpolling) {
           $('genStatus').style.display = 'flex';
-          $('genStatusText').textContent = '⟳ syncing new Granola transcripts…';
+          $('genStatusText').textContent = '⟳ syncing recent Granola notes…';
         }
         setTimeout(tick, 1500);
         return;
       }
       if (!gpolling) $('genStatus').style.display = 'none';
-      if (j.error) { toast('⚠️ Granola sync: ' + j.error); return; }
+      if (j.error) {
+        $('genSyncError').textContent = 'Granola sync failed: ' + j.error;
+        $('genSyncError').style.display = 'block';
+        return;
+      }
       const cur = gqueue[0] && gqueue[0].name;
       const target = generateTarget();
-      const d = await api('GET', '/api/transcripts?target=' + target);
-      if (target !== generateTarget()) return;
+      const range = generateRange();
+      const d = await api('GET', '/api/transcripts?target=' + target + '&range=' + range);
+      if (target !== generateTarget() || range !== generateRange()) return;
+      updateRangeNote(d);
       const fresh = d.transcripts.length - gqueue.length;
       gqueue = d.transcripts;
       // Keep whatever Ry is reading at the front of the queue
       const i = cur ? gqueue.findIndex((t) => t.name === cur) : -1;
       if (i > 0) gqueue.unshift(gqueue.splice(i, 1)[0]);
-      if (fresh > 0) toast(fresh + ' new transcript' + (fresh === 1 ? '' : 's') + ' from Granola');
+      if (fresh > 0) toast(fresh + ' new meeting' + (fresh === 1 ? '' : 's') + ' from Granola');
+      if (fresh <= 0) toast('Granola sync complete. No new meetings in the past 30 days; check Personal notes access if meetings are missing.');
       if (i <= 0) showTranscript();
       else if (activeTab === 'generate') $('progress').textContent = gqueue.length + ' waiting';
     };
     tick();
-  }).catch(() => {}); // sync is best-effort; the local queue still works
+  }).catch((e) => { $('genSyncError').textContent = e.message; $('genSyncError').style.display = 'block'; });
 }
 
 async function showTranscript() {
@@ -509,7 +540,7 @@ async function showTranscript() {
   $('genCard').style.display = 'block';
   $('genDone').style.display = 'none';
   $('genName').textContent = t.name.replace(/\\.(txt|md)$/, '');
-  $('genWho').textContent = t.attendees.length ? 'with ' + t.attendees.join(', ') : '';
+  $('genWho').textContent = (t.meetingDate ? t.meetingDate + ' · ' : '') + (t.attendees.length ? 'with ' + t.attendees.join(', ') : '');
   $('chars-gen').textContent = fmtN(t.size) + 'b';
   $('genSummary').textContent = t.summary || '…';
   $('genText').textContent = '';
@@ -750,8 +781,142 @@ function renderUnfollow(result) {
   };
 }
 
+// ── settings ──────────────────────────────────────────────────────────
+let settingsData;
+function settingsFieldId(key) { return 'setting-' + key.replaceAll('.', '-'); }
+function settingsProvider() {
+  const provider = $(settingsFieldId('llm.provider'))?.value;
+  const temperature = $(settingsFieldId('generation.temperature'));
+  const model = $(settingsFieldId('anthropic.model'))?.value.trim() || '';
+  const supported = provider !== 'anthropic' || new RegExp(settingsData.anthropicTemperaturePattern).test(model);
+  if (temperature) {
+    temperature.closest('label').hidden = !supported;
+    temperature.disabled = !supported;
+  }
+  const note = $('temperatureNote');
+  if (note) note.hidden = supported;
+  for (const group of ['Ollama', 'Anthropic']) {
+    const card = $('settings-group-' + group);
+    if (card) card.hidden = group.toLowerCase() !== provider;
+  }
+}
+function renderSettings(data) {
+  settingsData = data;
+  $('settingsIntro').textContent = data.initialized
+    ? 'Changes apply to the next action. Your existing content stays in place.'
+    : 'Welcome. Save your settings to prepare this workspace. Existing posts, prompts, and strategies are preserved.';
+  $('settingsSave').textContent = data.initialized ? 'Save settings' : 'Set up workspace';
+  $('settingsTest').disabled = !data.initialized;
+  const root = $('settingsFields');
+  root.replaceChildren();
+  const groups = {};
+  function group(name) {
+    if (groups[name]) return groups[name];
+    const card = document.createElement('section');
+    card.className = 'card settings-group'; card.id = 'settings-group-' + name;
+    const title = document.createElement('h2'); title.textContent = name;
+    card.append(title); root.append(card); groups[name] = card;
+    return card;
+  }
+  for (const field of data.fields) {
+    const label = document.createElement('label');
+    label.className = 'settings-field' + (field.type === 'checkbox' ? ' check' : '');
+    label.htmlFor = settingsFieldId(field.key);
+    const title = document.createElement('span'); title.textContent = field.label;
+    const input = document.createElement(field.type === 'select' ? 'select' : 'input');
+    input.id = label.htmlFor;
+    if (field.type === 'select') {
+      for (const option of field.options) { const el = document.createElement('option'); el.value = option; el.textContent = option; input.append(el); }
+    } else input.type = field.type;
+    if (field.type === 'checkbox') input.checked = !!field.value;
+    else input.value = field.value;
+    if (field.type === 'number') { input.min = field.min; input.max = field.max; input.step = field.integer ? '1' : '0.05'; }
+    // Required fields in inactive provider groups must not block browser form submission.
+    input.disabled = !!field.environment;
+    if (field.key === 'llm.provider') input.onchange = settingsProvider;
+    if (field.key === 'anthropic.model') {
+      input.setAttribute('list', 'anthropicModels');
+      input.oninput = settingsProvider;
+      const choices = document.createElement('datalist'); choices.id = 'anthropicModels';
+      for (const model of data.anthropicModels) {
+        const option = document.createElement('option'); option.value = model.id; option.label = model.label; choices.append(option);
+      }
+      group(field.group).append(choices);
+    }
+    label.append(title, input);
+    if (field.environment) { const note = document.createElement('small'); note.textContent = 'Managed by ' + field.environment; label.append(note); }
+    group(field.group).append(label);
+  }
+  const temperatureNote = document.createElement('p');
+  temperatureNote.id = 'temperatureNote'; temperatureNote.style.color = 'var(--muted)'; temperatureNote.style.fontSize = '13px';
+  temperatureNote.textContent = 'Temperature is not sent for this Claude model. Guide its style through your prompts.';
+  group('Generation').append(temperatureNote);
+  const credentials = group('Credentials');
+  const note = document.createElement('p'); note.style.color = 'var(--muted)'; note.style.fontSize = '13px';
+  note.textContent = 'Keys are saved only in this workspace, in a restricted local file ignored by Git. Saved keys are never displayed. Leave a field blank to keep its current value.';
+  credentials.append(note);
+  for (const secret of data.secrets) {
+    const label = document.createElement('label'); label.className = 'settings-field';
+    const title = document.createElement('span'); title.textContent = secret.label;
+    const input = document.createElement('input'); input.type = 'password'; input.autocomplete = 'new-password'; input.id = 'secret-' + secret.key;
+    input.disabled = secret.source === 'environment'; input.placeholder = secret.configured ? 'Configured — leave blank to keep' : 'Not configured';
+    label.htmlFor = input.id; label.append(title, input);
+    const status = document.createElement('small'); status.textContent = secret.source === 'environment' ? 'Managed by your environment' : secret.configured ? 'Configured' : 'Optional until you use this integration'; label.append(status);
+    credentials.append(label);
+    if (secret.key === 'GRANOLA_API_KEY') {
+      const help = document.createElement('small');
+      help.textContent = 'Use a key with Personal notes access. Save settings, then open Generate → Sync Granola to import notes from the past 30 days.';
+      label.append(help);
+    }
+    if (secret.configured && secret.source !== 'environment') {
+      const clear = document.createElement('label'); clear.className = 'settings-field check';
+      const check = document.createElement('input'); check.type = 'checkbox'; check.id = 'clear-' + secret.key;
+      clear.append(check, document.createTextNode('Remove saved ' + secret.label)); credentials.append(clear);
+    }
+  }
+  settingsProvider();
+}
+function setSettingsBusy(busy) {
+  $('settingsSave').disabled = busy;
+  $('settingsTest').disabled = busy || !settingsData?.initialized;
+}
+async function initSettings() {
+  try { renderSettings(await api('GET', '/api/settings')); }
+  catch (e) { $('settingsStatus').textContent = e.message; }
+  $('settingsForm').onsubmit = async (event) => {
+    event.preventDefault();
+    if (!settingsData) return;
+    setSettingsBusy(true);
+    const values = {}, secrets = {};
+    for (const field of settingsData.fields) {
+      const input = $(settingsFieldId(field.key));
+      if (input.disabled) continue;
+      values[field.key] = field.type === 'checkbox' ? input.checked : field.type === 'number' && input.value !== '' ? Number(input.value) : input.value;
+    }
+    for (const secret of settingsData.secrets) {
+      const input = $('secret-' + secret.key);
+      if (input.disabled) continue;
+      if ($('clear-' + secret.key)?.checked) secrets[secret.key] = null;
+      else if (input.value.trim()) secrets[secret.key] = input.value.trim();
+    }
+    try {
+      renderSettings(await api('POST', '/api/settings', { values, secrets }));
+      $('settingsStatus').textContent = 'Saved. You can now generate or review posts.';
+      for (const tab of Object.keys(tabInits)) if (tab !== 'settings') tabInits[tab] = false;
+    } catch (e) { $('settingsStatus').textContent = e.message; }
+    setSettingsBusy(false);
+  };
+  $('settingsTest').onclick = async () => {
+    setSettingsBusy(true);
+    $('settingsStatus').textContent = 'Testing saved settings. This may make a small billable LLM request.';
+    try { await api('POST', '/api/settings/test', {}); $('settingsStatus').textContent = 'Connection successful.'; }
+    catch (e) { $('settingsStatus').textContent = e.message; }
+    setSettingsBusy(false);
+  };
+}
+
 // ── boot ──────────────────────────────────────────────────────────────
-showTab(location.hash.slice(1) || 'review');
+api('GET', '/api/settings').then((data) => showTab(data.initialized ? location.hash.slice(1) || 'review' : 'settings')).catch(() => showTab('settings'));
 </script>
 </body>
 </html>`;

@@ -18,7 +18,7 @@ Edit your `.shiprc.json` file and change the provider to `anthropic`:
     "provider": "anthropic"
   },
   "anthropic": {
-    "model": "claude-sonnet-5",
+    "model": "claude-sonnet-5-5",
     "maxTokens": 4096
   }
 }
@@ -45,10 +45,10 @@ export ANTHROPIC_API_KEY=sk-ant-api03-your-key-here
 
 ## Available Models
 
-- `claude-sonnet-5` (default) - Best balance of intelligence, speed, and cost
-- `claude-opus-5` - Most capable Opus-tier model, best for complex tasks
-- `claude-fable-5` - Highest capability tier (premium pricing)
-- `claude-haiku-4-5` - Fastest and most cost-effective
+- `claude-sonnet-5-5` (default) - Best balance of intelligence, speed, and cost
+- `claude-opus-5-5` - Most capable Opus-tier model, best for complex tasks
+- `claude-fable-5-1` - Highest capability tier (premium pricing)
+- `claude-haiku-4-5-20251001` - Fastest and most cost-effective
 
 ## Usage
 
@@ -59,7 +59,7 @@ Once configured, use ship normally:
 ship work
 
 # Override model
-ship work --model claude-opus-5
+ship work --model claude-opus-5-5
 
 # Check available strategies
 ship work --list-strategies
@@ -75,11 +75,10 @@ In `.shiprc.json`:
     "provider": "anthropic"
   },
   "anthropic": {
-    "model": "claude-sonnet-5",
+    "model": "claude-sonnet-5-5",
     "maxTokens": 4096
   },
   "generation": {
-    "temperature": 0.7,
     "postsPerTranscript": 8
   }
 }
@@ -87,7 +86,7 @@ In `.shiprc.json`:
 
 - `model`: Which Claude model to use
 - `maxTokens`: Maximum tokens in response (default: 4096)
-- `temperature`: Creativity level 0-1 (default: 0.7)
+- `temperature`: Omitted for Sonnet 5.5, Opus 5.5, Fable 5.1, and unrecognized Claude models. Supported legacy models and Haiku 4.5 can still use this setting.
 
 ## Switching Back to Ollama
 
@@ -124,3 +123,7 @@ Approximate costs (as of 2024):
 - Claude 3.5 Sonnet: $3/$15 per million tokens (input/output)
 - Claude 3 Opus: $15/$75 per million tokens
 - Claude 3 Haiku: $0.25/$1.25 per million tokens
+
+Use **ship ui → Settings** to choose a model and enter credentials without editing configuration files. The model field suggests the current lineup while allowing custom IDs. Temperature disappears when it is not supported; stored legacy values do not get sent to those models. Explicitly configured older model IDs are preserved.
+
+Model IDs and sampling guidance checked October 5, 2026 against the [Anthropic model overview](https://platform.claude.com/docs/en/about-claude/models/overview) and [Opus migration guide](https://platform.claude.com/docs/en/models/opus-5-5/migration-guide).

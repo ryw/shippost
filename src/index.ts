@@ -3,6 +3,8 @@
 // Load environment variables from .env file
 import { config as dotenvConfig } from 'dotenv';
 dotenvConfig();
+import { loadWorkspaceSecrets } from './services/workspace-secrets.js';
+loadWorkspaceSecrets(process.cwd());
 
 import { Command } from 'commander';
 import { readFileSync } from 'fs';

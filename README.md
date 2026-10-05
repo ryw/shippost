@@ -368,12 +368,11 @@ Configuration is stored in `.shippostrc.json`.
     "provider": "anthropic"
   },
   "anthropic": {
-    "model": "claude-sonnet-5",
+    "model": "claude-sonnet-5-5",
     "maxTokens": 4096
   },
   "generation": {
-    "postsPerTranscript": 8,
-    "temperature": 0.7
+    "postsPerTranscript": 8
   },
   "typefully": {
     "socialSetId": "1"
@@ -397,10 +396,10 @@ See [ANTHROPIC_SETUP.md](ANTHROPIC_SETUP.md) for detailed Claude setup.
 | `ollama.host` | `http://127.0.0.1:11434` | Ollama server URL |
 | `ollama.model` | `llama3.1` | Ollama model |
 | `ollama.timeout` | `60000` | Request timeout (ms) |
-| `anthropic.model` | `claude-sonnet-5` | Claude model |
+| `anthropic.model` | `claude-sonnet-5-5` | Claude model |
 | `anthropic.maxTokens` | `4096` | Max response tokens |
 | `generation.postsPerTranscript` | `8` | Posts per input file |
-| `generation.temperature` | `0.7` | Creativity (0.0-1.0) |
+| `generation.temperature` | `0.7` | Sampling (0.0-1.0); omitted for newer Claude models |
 | `generation.strategies.enabled` | `true` | Enable strategies |
 | `generation.strategies.autoSelect` | `true` | Auto-select strategies |
 | `generation.strategies.diversityWeight` | `0.7` | Category diversity (0.0-1.0) |
@@ -603,10 +602,10 @@ Share your style.md:
 - `mixtral` — More creative
 
 **Anthropic:**
-- `claude-sonnet-5` — Best balance (recommended)
-- `claude-haiku-4-5` — Fastest
-- `claude-opus-5` — Most capable
-- `claude-fable-5` — Highest capability tier (premium pricing)
+- `claude-sonnet-5-5` — Best balance (recommended)
+- `claude-haiku-4-5-20251001` — Fastest
+- `claude-opus-5-5` — Complex coding and knowledge work
+- `claude-fable-5-1` — Demanding reasoning
 
 ### Strategies
 
@@ -814,10 +813,32 @@ ship work --target revisions --all --files meeting.txt
 ship work --sync --target social  # explicitly sync Granola first
 ```
 
-The Generate tab has the same target selector and a separate **Sync Granola** button. Switching targets shows sources still waiting for that target. Skipping a source affects only the selected target; old global skips remain respected.
+The Generate tab offers **Generate all 3**: one click runs social posts, blog drafts, and article revision proposals sequentially. A failed output does not stop the other types; retrying runs only unfinished types. Sources stay in the queue until every type is completed or skipped. Skip applies to all types. The separate **Sync Granola** button imports sources. CLI target selection remains available for individual runs.
 
 Completion is tracked per source and target in `.shippost-state.json`. Newly generated social posts do not prevent a later blog run. Existing records without target metadata are treated as completed for all targets to avoid silently regenerating historical content; use `--force --target blog --files meeting.txt` to explicitly rerun one target. A failed target stays retryable without rerunning other completed targets. Social strategy output is held until the full batch succeeds, so a model failure does not save a partial social batch. File writes and completion tracking are not a distributed transaction: inspect saved outputs after a process crash before forcing a retry.
 
 Blog runs create new drafts and use a fresh slug when a draft, article, or cover already exists. Revision runs save proposals in local `.shippost-revisions/`, with the original article path, its SHA-256 hash, and the source reference in a companion JSON file. Original articles remain unchanged. Review the proposal against the original, confirm the original hash still matches, then manually apply the chosen edits and run the site's checks before publication. There is no automatic apply/publish action. Repeated or interrupted revision runs may produce multiple proposals; review them before applying.
 
 Revision instructions live in `prompts/blog-revision.md`, created by `ship init`. For an existing workspace, copy `src/templates/blog-revision.md` from the Shippost checkout (or `dist/templates/blog-revision.md` from its package) into your workspace's `prompts/` directory and customize it.
+
+### Configure everything from Settings
+
+Run `ship ui` from the content workspace and open the **Settings** tab. A workspace with no local config opens Settings automatically; you do not need to run `ship init` or edit JSON. Saving creates missing prompts, input directory, strategies, and posts file while preserving existing editorial files. It also creates a missing revision prompt in an existing workspace.
+
+Settings covers the LLM provider, model and server, output/token limits, temperature, strategy options, Typefully social set, X client ID/tier, and blog/image output paths. **Test saved LLM connection** uses the saved settings and may make a small billable provider request. Saving alone does not call a provider, stage drafts, publish content, or authorize an X account. X OAuth authorization still uses the existing `ship analyze-x --setup` flow; Granola API keys can be saved under Credentials.
+
+API keys and the X client secret can be entered, replaced, or removed in the browser. They are stored in local `.shippost-secrets.json` with owner-only permissions, loaded by CLI commands and generation workers, and never sent back in settings responses. Blank credential fields keep existing values; explicit removal clears a saved value. Existing Anthropic keys in local config migrate to the separate credentials file on save. Both files stay ignored by Git; ignore rules do not remove files already tracked elsewhere. Environment-provided credentials and account overrides take precedence and appear as managed fields.
+
+Changes apply on the next operation, and cached provider clients reset after saving. Settings changes are blocked while background jobs or Typefully staging are active. Settings access is restricted to the localhost origin and saves require a per-server browser token. This is a local UI, not an authenticated public deployment: use the local browser until authenticated remote access is implemented.
+
+Anthropic model suggestions were refreshed against the [current model overview](https://platform.claude.com/docs/en/about-claude/models/overview) on October 5, 2026: Sonnet 5.5 (new-workspace default), Opus 5.5, Fable 5.1, and Haiku 4.5. Existing explicit model choices are preserved, and you can enter another model ID. Settings hides temperature for newer or unrecognized Claude models; the request also omits it, even when an older config has a temperature value. Known compatible legacy models (including Haiku 4.5) and Ollama retain the control. Anthropic recommends omitting sampling parameters for newer models in its [migration guide](https://platform.claude.com/docs/en/models/opus-5-5/migration-guide). Generated-post metadata omits temperature when it was not sent.
+
+The Generate tab defaults to **Past 30 days**: today and the preceding 29 UTC calendar dates, using recorded meeting dates or the date prefix in imported filenames. Copying a file does not make an old meeting recent. Older, future-dated, and undated sources remain accessible through **All dates**. This filters the local queue; use **Sync Granola** to import recent notes. An empty recent queue means recent meetings may still need importing.
+
+### Granola API key sync
+
+In Settings → Credentials, save a **Granola API key** with Personal notes access (Business or Enterprise plan). Then use Generate → **Sync Granola**. The official API importer fetches notes created within the past 30 UTC calendar dates, including private written notes and AI summaries; it does not fetch full transcripts. Notes are identified by stable Granola IDs, paginated, saved locally, and checkpointed after each successful import. Empty or failed notes stay retryable. Already imported notes are skipped; CLI `--force` explicitly refreshes them. API failures do not fall back to desktop credentials.
+
+The CLI uses the same importer when `GRANOLA_API_KEY` is saved in the workspace or set in the environment. Without a key, the CLI retains the legacy macOS desktop importer. The UI requires an API key and does not need Granola installed on the server. Keys use the same ignored, owner-only credential file as the other integrations and are never returned to the browser.
+
+To suspend X integration, turn off **Settings → X → Enable X API access**. This blocks OAuth and X API clients, including replies, unfollows, and analytics, for the workspace. Credentials and queued unfollow decisions are retained; pending decisions only run after explicit Retry. Granola imports and local content generation remain available.

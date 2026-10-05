@@ -8,6 +8,7 @@ import { GENERATION_TARGETS } from '../types/state.js';
 import type { ContentStrategy } from '../types/strategy.js';
 import { DEFAULT_CONFIG } from '../types/config.js';
 import { FileSystemError, ConfigError, NotInitializedError } from '../utils/errors.js';
+import { loadWorkspaceSecrets } from './workspace-secrets.js';
 import { validateConfig } from '../utils/validation.js';
 
 const LOCK_TIMEOUT_MS = 10_000;
@@ -77,6 +78,7 @@ export class FileSystemService {
   }
 
   loadConfig(): T2pConfig {
+    loadWorkspaceSecrets(this.cwd);
     const configPath = join(this.cwd, '.shippostrc.json');
 
     if (!existsSync(configPath)) {
@@ -257,7 +259,7 @@ export class FileSystemService {
     }
   }
 
-  createPost(sourceFile: string, content: string, model: string, temperature: number): Post {
+  createPost(sourceFile: string, content: string, model: string, temperature: number | undefined): Post {
     return {
       id: randomUUID(),
       sourceFile,

@@ -21,7 +21,7 @@ export interface Post {
   platform?: 'x' | 'linkedin';
   metadata: {
     model: string;
-    temperature: number;
+    temperature?: number;
     tokens?: number;
     bangerScore?: number;
     bangerEvaluation?: BangerEvaluation;

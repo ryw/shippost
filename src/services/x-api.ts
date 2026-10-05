@@ -1,3 +1,4 @@
+import { assertXEnabled } from './x-access.js';
 import { TwitterApi, TweetV2, UserV2 } from 'twitter-api-v2';
 import type {
   TweetV2WithMetrics,
@@ -78,6 +79,7 @@ export class XApiService {
   private mePromise?: Promise<UserV2>;
 
   constructor(accessToken: string) {
+    assertXEnabled();
     this.client = new TwitterApi(accessToken);
   }
 
