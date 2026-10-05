@@ -137,19 +137,13 @@ export const PAGE = `<!doctype html>
 
   <section class="view" id="view-generate">
     <div class="toolbar">
-      <label for="genTarget">Generate</label>
-      <select id="genTarget" class="ghost">
-        <option value="social">Social posts</option>
-        <option value="blog">Blog drafts</option>
-        <option value="revisions">Article revision proposals</option>
-      </select>
       <label for="genRange">Meetings</label>
       <select id="genRange" class="ghost"><option value="last_30_days">Past 30 days</option><option value="all">All dates</option></select>
       <button class="ghost" id="genSync">Sync Granola</button>
     </div>
     <p id="genSyncError" role="alert" style="display:none"></p>
     <p id="genRangeNote" style="color:var(--muted);font-size:13px"></p>
-    <p id="genTargetNote" style="color:var(--muted);font-size:13px">Social posts go to Review for approval.</p>
+    <p id="genTargetNote" style="color:var(--muted);font-size:13px">Generate social posts, blog drafts, and article revision proposals together. Completed outputs are skipped on retry.</p>
     <div class="toolbar" id="genStatus" style="display:none">
       <span class="dim" id="genStatusText" style="color:var(--muted);font-size:13px"></span>
     </div>
@@ -162,7 +156,7 @@ export const PAGE = `<!doctype html>
       <div id="genSummary" style="font-style:italic;color:var(--muted);margin-bottom:12px"></div>
       <div id="genText" class="serif" style="max-height:340px;overflow-y:auto;white-space:pre-wrap;border-top:1px solid var(--line);padding-top:12px"></div>
       <div class="actions">
-        <button class="primary" id="genProcess">Process</button>
+        <button class="primary" id="genProcess">Generate all 3</button>
         <button class="ghost" id="genSkip">Skip</button>
       </div>
     </div>
@@ -469,7 +463,7 @@ function updateRangeNote(data) {
   $('genDone').textContent = data.range !== 'all' && !data.matchingFiles ? 'No meetings from the past 30 days have been imported. Import recent meetings to begin.' : 'No unprocessed transcripts in this date range.';
 }
 
-function generateTarget() { return $('genTarget').value; }
+function generateTarget() { return 'all'; }
 
 async function refreshTranscripts() {
   const target = generateTarget();
@@ -483,16 +477,6 @@ async function refreshTranscripts() {
 
 function initGenerate() {
   refreshTranscripts().catch((e) => toast('⚠️ ' + e.message));
-  $('genTarget').onchange = () => {
-    gqueue = [];
-    showTranscript();
-    $('genTargetNote').textContent = {
-      social: 'Social posts go to Review for approval.',
-      blog: 'Creates blog drafts for review. Existing articles remain unchanged.',
-      revisions: 'Saves proposed changes in .shippost-revisions/ for manual review and application.'
-    }[generateTarget()];
-    refreshTranscripts().catch((e) => toast('⚠️ ' + e.message));
-  };
   $('genRange').onchange = () => {
     gqueue = [];
     showTranscript();

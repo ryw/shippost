@@ -10,7 +10,7 @@ import { XApiService, RateLimitError } from '../../services/x-api.js';
 import { createLLMService } from '../../services/llm-factory.js';
 import { logger } from '../../utils/logger.js';
 import { isShippostProject } from '../../utils/validation.js';
-import { isGenerationTarget, type GenerationTarget } from '../../types/state.js';
+import { GENERATION_TARGETS, isGenerationTarget, type GenerationTarget } from '../../types/state.js';
 import type { Post } from '../../types/post.js';
 import {
   gatherReplyTweets,
@@ -383,8 +383,9 @@ export async function uiCommand(options: UiOptions): Promise<void> {
 
         // ── generate ─────────────────────────────────────────────────
         if (route === 'GET /api/transcripts') {
-          const target = url.searchParams.get('target') || 'social';
-          if (!isGenerationTarget(target)) return send(400, JSON.stringify({ error: 'invalid target' }));
+          const target = url.searchParams.get('target') || 'all';
+          if (target !== 'all' && !isGenerationTarget(target)) return send(400, JSON.stringify({ error: 'invalid target' }));
+          const targets: readonly GenerationTarget[] = target === 'all' ? GENERATION_TARGETS : [target];
           const range = url.searchParams.get('range') || 'last_30_days';
           if (range !== 'last_30_days' && range !== 'all') return send(400, JSON.stringify({ error: 'invalid date range' }));
           const now = new Date();
@@ -397,8 +398,8 @@ export async function uiCommand(options: UiOptions): Promise<void> {
           const meta = loadMeta();
           const recentFiles = files.filter(f => inLast30Days(transcriptDate(f, meta[f]?.meetingDate), now));
           const unprocessed = (range === 'all' ? files : recentFiles)
-            .filter((f) => !fs.isFileProcessed(join(inputDir, f), state, target))
-            .filter((f) => !meta[f]?.skipped && !meta[f]?.skippedTargets?.[target])
+            .filter((f) => !meta[f]?.skipped && targets.some(t =>
+              !fs.isFileProcessed(join(inputDir, f), state, t) && !meta[f]?.skippedTargets?.[t]))
             .filter((f) => f !== genActive && !genQueue.some((item) => item.file === f))
             .map((f) => {
               const st = statSync(join(inputDir, f));
@@ -432,11 +433,12 @@ export async function uiCommand(options: UiOptions): Promise<void> {
         }
 
         if (route === 'POST /api/transcripts/skip') {
-          const { name, target = 'social' } = await readBody();
-          if (!isGenerationTarget(target)) return send(400, JSON.stringify({ error: 'invalid target' }));
+          const { name, target = 'all' } = await readBody();
+          if (target !== 'all' && !isGenerationTarget(target)) return send(400, JSON.stringify({ error: 'invalid target' }));
+          const targets: readonly GenerationTarget[] = target === 'all' ? GENERATION_TARGETS : [target];
           const key = basename(String(name));
           const meta = loadMeta();
-          meta[key] = { ...meta[key], skippedTargets: { ...meta[key]?.skippedTargets, [target]: true } };
+          meta[key] = { ...meta[key], skippedTargets: { ...meta[key]?.skippedTargets, ...Object.fromEntries(targets.map(t => [t, true])) } };
           await saveMeta(meta);
           return send(200, JSON.stringify({ ok: true }));
         }
@@ -480,8 +482,9 @@ export async function uiCommand(options: UiOptions): Promise<void> {
         }
 
         if (route === 'POST /api/generate') {
-          const { files, target = 'social' } = await readBody();
-          if (!isGenerationTarget(target)) return send(400, JSON.stringify({ error: 'invalid target' }));
+          const { files, target = 'all' } = await readBody();
+          if (target !== 'all' && !isGenerationTarget(target)) return send(400, JSON.stringify({ error: 'invalid target' }));
+          const targets: readonly GenerationTarget[] = target === 'all' ? GENERATION_TARGETS : [target];
           if (!Array.isArray(files) || files.length === 0) {
             return send(400, JSON.stringify({ error: 'no files selected' }));
           }
@@ -499,9 +502,15 @@ export async function uiCommand(options: UiOptions): Promise<void> {
             }
           });
           if (accepted.length === 0) return send(409, JSON.stringify({ error: 'already processing' }));
-          genQueue.push(...accepted.map((file) => ({ file, target })));
+          const state = fs.loadState();
+          const meta = loadMeta();
+          genQueue.push(...[...new Set(accepted)].flatMap(file => targets
+            .filter(t => !meta[file]?.skipped && !meta[file]?.skippedTargets?.[t] &&
+              !fs.isFileProcessed(join(cwd, 'input', file), state, t))
+            .map(target => ({ file, target }))));
           startJob('generate', async (job) => {
             let item: { file: string; target: GenerationTarget } | undefined;
+            const failures: string[] = [];
             try {
               while ((item = genQueue.shift())) {
                 const { file: f, target } = item;
@@ -518,8 +527,13 @@ export async function uiCommand(options: UiOptions): Promise<void> {
                   child.stderr.on('data', onData);
                   child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`ship work exited with code ${code}`))));
                   child.on('error', reject);
+                }).catch((error) => {
+                  const message = `${target}: ${f}: ${(error as Error).message}`;
+                  failures.push(message);
+                  job.log.push(`✗ ${message}`);
                 });
               }
+              if (failures.length) throw new Error(failures.join('; '));
             } catch (error) {
               // Return unstarted work to the selectable queue after a failure.
               genQueue.length = 0;

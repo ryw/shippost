@@ -813,7 +813,7 @@ ship work --target revisions --all --files meeting.txt
 ship work --sync --target social  # explicitly sync Granola first
 ```
 
-The Generate tab has the same target selector and a separate **Sync Granola** button. Switching targets shows sources still waiting for that target. Skipping a source affects only the selected target; old global skips remain respected.
+The Generate tab offers **Generate all 3**: one click runs social posts, blog drafts, and article revision proposals sequentially. A failed output does not stop the other types; retrying runs only unfinished types. Sources stay in the queue until every type is completed or skipped. Skip applies to all types. The separate **Sync Granola** button imports sources. CLI target selection remains available for individual runs.
 
 Completion is tracked per source and target in `.shippost-state.json`. Newly generated social posts do not prevent a later blog run. Existing records without target metadata are treated as completed for all targets to avoid silently regenerating historical content; use `--force --target blog --files meeting.txt` to explicitly rerun one target. A failed target stays retryable without rerunning other completed targets. Social strategy output is held until the full batch succeeds, so a model failure does not save a partial social batch. File writes and completion tracking are not a distributed transaction: inspect saved outputs after a process crash before forcing a retry.
 

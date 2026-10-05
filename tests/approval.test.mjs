@@ -60,6 +60,32 @@ test('review requires approval before staging and handles retries and concurrent
   const child = spawn(process.execPath, ['--input-type=module', '-e', `
     import { TypefullyService } from ${JSON.stringify(service)};
     import { uiCommand } from ${JSON.stringify(ui)};
+    import cp from 'node:child_process';
+    import { syncBuiltinESMExports } from 'node:module';
+    import { EventEmitter } from 'node:events';
+    import { appendFileSync } from 'node:fs';
+    import { FileSystemService } from ${JSON.stringify(new URL('../dist/services/file-system.js', import.meta.url).href)};
+    const workFs = new FileSystemService(process.cwd());
+    let blogFailed = false;
+    cp.spawn = (_exe, args) => {
+      const worker = new EventEmitter();
+      worker.stdout = new EventEmitter();
+      worker.stderr = new EventEmitter();
+      const target = args[args.indexOf('--target') + 1];
+      const file = args[args.indexOf('--files') + 1];
+      setTimeout(() => {
+        appendFileSync('worker-targets.txt', target + '\\n');
+        if (target === 'blog' && !blogFailed) {
+          blogFailed = true;
+          worker.emit('close', 1);
+        } else {
+          workFs.saveState(workFs.markFileProcessed(process.cwd() + '/input/' + file, 1, workFs.loadState(), target));
+          worker.emit('close', 0);
+        }
+      }, 20);
+      return worker;
+    };
+    syncBuiltinESMExports();
     let calls = 0;
     TypefullyService.prototype.createDraft = async function(content, platform) {
       calls++;
@@ -99,6 +125,27 @@ test('review requires approval before staging and handles retries and concurrent
     assert.equal((await api('transcripts/skip', { name: sourceName, target: 'blog' })).status, 200);
     assert.equal((await api('transcripts?target=blog')).body.transcripts.length, 0);
     assert.equal((await api('transcripts?target=revisions')).body.transcripts.length, 1);
+    assert.equal((await api('transcripts')).body.transcripts.length, 1);
+    assert.equal((await api('transcripts/skip', { name: sourceName })).status, 200);
+    assert.equal((await api('transcripts')).body.transcripts.length, 0);
+    const combinedName = new Date().toISOString().slice(0, 10) + '_combined.txt';
+    writeFileSync(join(dir, 'input', combinedName), 'Combined generation test.');
+    const waitForGeneration = async () => {
+      for (let i = 0; i < 100; i++) {
+        const { body } = await api('job/generate');
+        if (!body.running) return body;
+        await new Promise(r => setTimeout(r, 20));
+      }
+      throw new Error('generation timeout');
+    };
+    assert.equal((await api('generate', { files: [combinedName] })).status, 202);
+    assert.match((await waitForGeneration()).error, /blog/);
+    assert.deepEqual(readFileSync(join(dir, 'worker-targets.txt'), 'utf8').trim().split('\n'), ['social', 'blog', 'revisions']);
+    assert.equal((await api('transcripts')).body.transcripts.length, 1);
+    assert.equal((await api('generate', { files: [combinedName] })).status, 202);
+    assert.equal((await waitForGeneration()).error, undefined);
+    assert.deepEqual(readFileSync(join(dir, 'worker-targets.txt'), 'utf8').trim().split('\n'), ['social', 'blog', 'revisions', 'blog']);
+    assert.equal((await api('transcripts')).body.transcripts.length, 0);
     assert.equal((await api('stage-approved', {})).status, 404);
     assert.equal((await api('decision', { id: 'one', action: 'stage' })).status, 400);
     assert.equal((await api('decision', { id: 'one', action: 'approve', content: 'edited' })).status, 200);
