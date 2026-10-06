@@ -189,6 +189,7 @@ export const PAGE = `<!doctype html>
       <section class="card queue-panel">
         <div class="panel-heading"><h2>Processing</h2><span id="queueCount">Waiting</span></div>
         <div id="queueByType" class="queue-counts"></div>
+        <p id="genSubsteps" class="quiet" role="status" style="min-height:36px;margin:12px 0"></p>
         <div id="queueItems"><p class="quiet">Queue empty</p></div>
         <div id="genStatus" style="display:none"><p id="genStatusText" class="quiet" role="status"></p></div>
       </section>
@@ -618,6 +619,9 @@ function skipTranscript() {
 }
 
 function renderProcessing(s) {
+  const progress = s.running && s.active ? s.progress : null;
+  const stepText = progress ? progress.label + ' · Substep ' + progress.current + '/' + progress.total : (s.running && s.active ? 'Preparing…' : '');
+  if ($('genSubsteps').textContent !== stepText) $('genSubsteps').textContent = stepText;
   const key = JSON.stringify([s.active, s.activeTarget, s.queue, s.queued, s.running, s.waitingByType]);
   if (renderProcessing.lastKey === key) return;
   renderProcessing.lastKey = key;

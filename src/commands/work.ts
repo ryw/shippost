@@ -579,7 +579,8 @@ async function proposeRelatedBlogRevisions(
   const files = findBlogPosts(contentDirs);
   const results: Array<{ path: string; updated: boolean }> = [];
 
-  for (const file of files) {
+  for (const [index, file] of files.entries()) {
+    logger.info(`  Substep ${index + 1}/${files.length} · Checking articles`);
     try {
       const content = readFileSync(file.path, 'utf-8');
 
@@ -909,6 +910,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
             try {
               // Show which strategy is being processed
               logger.info(`  ${progress} ${strategy.name}...`);
+              logger.info(`  Substep ${i * 2 + 1}/${selectedStrategies.length * 2} · Drafting social posts`);
 
               const strategyPrompt = buildStrategyPrompt(
                 systemPrompt,
@@ -945,6 +947,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
 
                 // Evaluate banger potential
                 try {
+                  logger.info(`  Substep ${i * 2 + 2}/${selectedStrategies.length * 2} · Evaluating social posts`);
                   const evalPrompt = buildBangerEvalPrompt(bangerEvalTemplate, postData.content);
                   const evalResponse = await llm.generate(evalPrompt);
                   const evaluation = parseBangerEval(evalResponse);
@@ -1008,6 +1011,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
         } else {
           // Direct generation using work.md instructions
           logger.info(`  Generating posts...`);
+          logger.info(`  Substep 1/1 · Drafting social posts`);
 
           const prompt = buildPrompt(systemPrompt, styleGuide, workInstructions, transcript);
 
@@ -1033,6 +1037,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
 
           // Evaluate and save posts
           for (let i = 0; i < posts.length; i++) {
+            logger.info(`  Substep ${i + 1}/${posts.length} · Evaluating social posts`);
             const postData = posts[i];
             const progress = `[${i + 1}/${posts.length}]`;
 
@@ -1117,6 +1122,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
 
         // Generate blog drafts (1-3 atomic essays per transcript)
         logger.info('  Generating blog drafts...');
+        logger.info('  Substep 1/1 · Drafting essays');
         const blogResults = await generateBlogDrafts(llm, transcript, systemPrompt, styleGuide, publishedIndex);
         logger.info(`  LLM identified ${blogResults.length} atomic essay${blogResults.length === 1 ? '' : 's'}`);
 
@@ -1133,7 +1139,8 @@ export async function workCommand(options: WorkOptions): Promise<void> {
         // transcript don't overwrite each other.
         const usedSlugs = new Set<string>();
         blogDraftCount = blogResults.length;
-        for (const result of blogResults) {
+        for (const [index, result] of blogResults.entries()) {
+          logger.info(`  Substep ${index + 1}/${blogResults.length} · Preparing drafts and covers`);
           const baseSlug = createSlug(result.slug || result.title) || 'draft';
           let slug = baseSlug;
           let n = 2;

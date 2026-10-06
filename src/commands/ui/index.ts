@@ -1,3 +1,4 @@
+import { generationProgress } from './progress.js';
 import { syncGranolaAPI } from '../../services/granola-api.js';
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { spawn, exec } from 'child_process';
@@ -452,6 +453,7 @@ export async function uiCommand(options: UiOptions): Promise<void> {
             running: job?.running ?? false,
             active: genActive,
             activeTarget: genActiveTarget,
+            progress: job?.running && genActive ? generationProgress(job.log) : null,
             queue: genQueue,
             queued: genQueue.length,
             waitingByType: Object.fromEntries(GENERATION_TARGETS.map(target => [target, genQueue.filter(item => item.target === target).length])),

@@ -6,7 +6,7 @@ import { PAGE } from '../dist/commands/ui/page.js';
 test('identical polling responses preserve queue DOM and do not refetch titles', async () => {
   let writes = 0, reads = 0;
   const element = () => ({ children: [], value: '', set textContent(value) { writes++; this.value = value; }, get textContent() { return this.value; }, append(...nodes) { writes++; this.children.push(...nodes); }, replaceChildren() { writes++; this.children = []; } });
-  const nodes = { queueCount: element(), queueByType: element(), queueItems: element() };
+  const nodes = { genSubsteps: element(), queueCount: element(), queueByType: element(), queueItems: element() };
   const context = vm.createContext({ $: id => nodes[id], document: { createElement: element }, api: async () => { reads++; return { content: '# Meeting title' }; } });
   const script = PAGE.match(/<script>([\s\S]*)<\/script>/)[1];
   vm.runInContext(script.slice(script.indexOf('function renderProcessing(s)'), script.indexOf('function watchGenerate()')), context);
@@ -15,6 +15,10 @@ test('identical polling responses preserve queue DOM and do not refetch titles',
   await Promise.resolve();
   assert.deepEqual(nodes.queueByType.children.map(node => node.children[0].textContent), ['0', '1', '0']);
   const firstRow = nodes.queueItems.children[0];
+  status.progress = { current: 3, total: 16, label: 'Drafting social posts' };
+  context.renderProcessing(status);
+  assert.equal(nodes.genSubsteps.textContent, 'Drafting social posts · Substep 3/16');
+  assert.equal(nodes.queueItems.children[0], firstRow);
   writes = 0;
   for (let i = 0; i < 5; i++) context.renderProcessing(structuredClone(status));
   assert.equal(writes, 0);
