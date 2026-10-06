@@ -1,3 +1,4 @@
+import { assertBackupWriter, checkpointWorkspace } from './workspace-backup.js';
 import { existsSync, readFileSync, writeFileSync, renameSync, unlinkSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -18,10 +19,12 @@ export function loadGenerationQueue(cwd: string): GenerationSnapshot {
   return data;
 }
 export function saveGenerationQueue(cwd: string, queue: GenerationItem[], active: GenerationItem | null) {
+  assertBackupWriter(cwd);
   const path = join(cwd, filename), temp = path + '.' + randomUUID() + '.tmp';
   try {
     writeFileSync(temp, JSON.stringify({ version: 1, queue, active }) + '\n', { mode: 0o600, flag: 'wx' });
     renameSync(temp, path);
+    checkpointWorkspace(cwd);
   } finally { if (existsSync(temp)) unlinkSync(temp); }
 }
 export function recoverGenerationQueue(snapshot: GenerationSnapshot): GenerationItem[] {

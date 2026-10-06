@@ -33,7 +33,14 @@ const packageJson = JSON.parse(
 
 import { processBlogPrs, readBlogPrStatus } from './services/blog-prs.js';
 
+import { startWorkspaceBackup, checkpointWorkspace, configureWorkspaceBackup, releaseWorkspaceBackup, backupStatus } from './services/workspace-backup.js';
 const program = new Command();
+program.hook('preAction', (_root, command) => { if (!['ui','backup'].includes(command.name()) && !(command.name()==='review' && command.opts().web)) startWorkspaceBackup(process.cwd()); });
+program.hook('postAction', (_root, command) => { if (!['ui','backup'].includes(command.name()) && !(command.name()==='review' && command.opts().web)) checkpointWorkspace(process.cwd()); });
+program.command('backup').description('Checkpoint, connect, or release a private workspace backup')
+  .option('--repository <owner/name>', 'Connect a dedicated private GitHub repository')
+  .option('--release', 'Checkpoint and release the writer after stopping other workspace processes')
+  .action(opts => { const cwd=process.cwd(); if(opts.repository)configureWorkspaceBackup(cwd,opts.repository); else if(opts.release)releaseWorkspaceBackup(cwd); else {startWorkspaceBackup(cwd);checkpointWorkspace(cwd);} console.log(JSON.stringify(backupStatus(cwd),null,2)); });
 
 program
   .name('ship')
@@ -173,4 +180,4 @@ program.command('blog-prs')
     } while (opts.watch);
   });
 
-program.parse();
+program.parseAsync().catch(error => { console.error(error.message); process.exitCode = 1; });

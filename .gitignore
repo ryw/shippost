@@ -46,3 +46,7 @@ coverage/
 .shippost-revisions/
 
 .shippost-blog-prs.lock/
+
+.shippost-backup.lock/
+.shippost-metrics/
+.shippost-grok/

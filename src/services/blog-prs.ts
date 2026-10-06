@@ -1,3 +1,4 @@
+import { assertBackupWriter, checkpointWorkspace } from './workspace-backup.js';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
@@ -226,6 +227,7 @@ async function openBundle(cwd: string, bundle: Bundle, branch: string, run: Run)
     if (!remote) {
       if (process.env.TEMBO_SESSION_ID) await run('tembo', ['merge', `origin/${base}`], worktree);
       await prepareBlogBundle(cwd, worktree, bundle, run);
+      assertBackupWriter(cwd);
       const title = `content: ${bundle.newPosts[0] || 'article revisions'}`;
       if (process.env.TEMBO_SESSION_ID) await run('tembo', ['commit', '-m', title, '--repository-url', `https://github.com/${repository}`, '--', ...Object.keys(bundle.files), ...(bundle.newPosts.length ? ['src/lib/homepage-sections.ts'] : [])], worktree);
       else {
@@ -245,6 +247,7 @@ async function openBundle(cwd: string, bundle: Bundle, branch: string, run: Run)
       await run('pnpm', ['lint'], worktree);
       await run('pnpm', ['build'], worktree);
     }
+    assertBackupWriter(cwd);
     const title = bundle.newPosts.length ? `Review: ${bundle.newPosts[0]}${bundle.newPosts.length > 1 ? ` + ${bundle.newPosts.length - 1} more` : ''}${bundle.revisions.length ? ' and revisions' : ''}` : 'Review: suggested article revisions';
     const body = `Generated website content from one meeting. Review all new essays and suggested edits together before merging.\n\nNew essays: ${bundle.newPosts.join(', ') || 'None'}.\n\nSuggested revisions: ${bundle.revisions.join(', ') || 'None selected'}.\n\nIncludes article covers and homepage placement. Meeting notes and local workspace state are excluded. Merging publishes these changes.\n\nValidation: pnpm lint and pnpm build passed in an isolated checkout before pushing. Dependencies are reused from the existing workspace when its manifests match; otherwise installation is frozen. A clean dependency install is a separate check.\n`;
     const bodyPath = join(temp, 'body.md'); writeFileSync(bodyPath, body);
@@ -261,6 +264,7 @@ async function openBundle(cwd: string, bundle: Bundle, branch: string, run: Run)
 
 /** Cross-process lock: the UI and standalone watcher can safely overlap. */
 export async function processBlogPrs(cwd: string, options: { retry?: boolean; run?: Run } = {}) {
+  assertBackupWriter(cwd);
   if (!new FileSystemService(cwd).loadConfig().blog?.pullRequests?.enabled) return;
   const lock = join(cwd, '.shippost-blog-prs.lock');
   if (existsSync(lock)) {
@@ -281,11 +285,11 @@ export async function processBlogPrs(cwd: string, options: { retry?: boolean; ru
       const previous = records[bundle.id];
       if (previous?.status === 'opened' || (previous?.fingerprint === bundle.fingerprint && ['failed', 'empty'].includes(previous.status) && !options.retry)) continue;
       const record: PrRecord = { source: bundle.source, fingerprint: bundle.fingerprint, revisionFingerprint: revisions, status: Object.keys(bundle.files).length ? 'preparing' : 'empty', branch: `tembo/meeting-${bundle.id}`, updatedAt: new Date().toISOString() };
-      records[bundle.id] = record; saveStatus(cwd, records);
+      records[bundle.id] = record; saveStatus(cwd, records); checkpointWorkspace(cwd);
       if (record.status === 'empty') continue;
       try { record.url = await openBundle(cwd, bundle, record.branch, options.run || runCommand); record.status = 'opened'; }
       catch (error) { record.status = 'failed'; record.error = (error as Error).message; }
-      record.updatedAt = new Date().toISOString(); saveStatus(cwd, records);
+      record.updatedAt = new Date().toISOString(); saveStatus(cwd, records); checkpointWorkspace(cwd);
     }
   } finally { rmSync(lock, { recursive: true, force: true }); }
 }
