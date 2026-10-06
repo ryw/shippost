@@ -112,6 +112,9 @@ export const PAGE = `<!doctype html>
   .quiet { margin: 12px 0 0; }
   .queue-panel #genStatusText { height: 36px; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
   @media (max-width: 800px) { .app-nav { padding: 16px; } .generate-layout { grid-template-columns: 1fr; } .generate-sidebar { position: static; } }
+  .queue-counts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px; }
+  .queue-counts strong { display: block; font-size: 24px; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .queue-counts span { color: var(--muted); font-size: 12px; }
 </style>
 </head>
 <body>
@@ -184,7 +187,8 @@ export const PAGE = `<!doctype html>
     </div>
     <aside class="generate-sidebar">
       <section class="card queue-panel">
-        <div class="panel-heading"><h2>Processing</h2><span id="queueCount">0</span></div>
+        <div class="panel-heading"><h2>Processing</h2><span id="queueCount">Waiting</span></div>
+        <div id="queueByType" class="queue-counts"></div>
         <div id="queueItems"><p class="quiet">Queue empty</p></div>
         <div id="genStatus" style="display:none"><p id="genStatusText" class="quiet" role="status"></p></div>
       </section>
@@ -614,7 +618,7 @@ function skipTranscript() {
 }
 
 function renderProcessing(s) {
-  const key = JSON.stringify([s.active, s.activeTarget, s.queue, s.queued, s.running]);
+  const key = JSON.stringify([s.active, s.activeTarget, s.queue, s.queued, s.running, s.waitingByType]);
   if (renderProcessing.lastKey === key) return;
   renderProcessing.lastKey = key;
   renderProcessing.titles ||= new Map();
@@ -625,7 +629,14 @@ function renderProcessing(s) {
     if (!items.has(item.file)) items.set(item.file, { active: false, targets: [] });
     items.get(item.file).targets.push(labels[item.target]);
   }
-  $('queueCount').textContent = s.queue ? items.size : (s.running ? 'Active' : '0');
+  const counts = s.waitingByType || (s.queue ? Object.fromEntries(Object.keys(labels).map(type => [type, s.queue.filter(item => item.target === type).length])) : null);
+  $('queueByType').replaceChildren();
+  for (const [type, label] of Object.entries(labels)) {
+    const count = document.createElement('div');
+    const number = document.createElement('strong'); number.textContent = counts ? String(counts[type] || 0) : '—';
+    const name = document.createElement('span'); name.textContent = label;
+    count.append(number, name); $('queueByType').append(count);
+  }
   $('queueItems').replaceChildren();
   for (const [file, item] of items) {
     const row = document.createElement('div'); row.className = 'queue-item';
@@ -639,9 +650,6 @@ function renderProcessing(s) {
       renderProcessing.titles.set(file, name);
       title.textContent = name; title.title = name;
     }).catch(() => { title.textContent = 'Meeting'; });
-  }
-  if (!s.queue && s.queued) {
-    const pending = document.createElement('p'); pending.className = 'quiet'; pending.textContent = s.queued + ' outputs waiting'; $('queueItems').append(pending);
   }
   if (!items.size && !s.queued) $('queueItems').textContent = 'Queue empty';
 }

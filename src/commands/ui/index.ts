@@ -454,6 +454,7 @@ export async function uiCommand(options: UiOptions): Promise<void> {
             activeTarget: genActiveTarget,
             queue: genQueue,
             queued: genQueue.length,
+            waitingByType: Object.fromEntries(GENERATION_TARGETS.map(target => [target, genQueue.filter(item => item.target === target).length])),
             lastLine: job?.log.filter((l) => l.trim()).slice(-1)[0] || '',
             error: job?.error || null,
           }));
