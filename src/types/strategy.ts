@@ -8,6 +8,7 @@ export type StrategyCategory =
   | 'reflective';
 
 export interface StrategyApplicability {
+  requiresVisualAsset?: boolean;
   requiresPersonalNarrative?: boolean;
   requiresActionableKnowledge?: boolean;
   requiresResources?: boolean;

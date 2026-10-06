@@ -122,7 +122,12 @@ Initialize a new ship project in the current directory.
 | `prompts/work.md` | Post generation instructions |
 | `prompts/system.md` | System prompt (advanced) |
 | `prompts/analysis.md` | Style analysis prompt (advanced) |
-| `prompts/content-analysis.md` | Strategy selection (advanced) |
+| `prompts/content-analysis.md` | Legacy content analysis |
+| `prompts/social-plan.md` | Grounded strategy and angle planning |
+| `prompts/social-strategy.md` | Single social-post drafting |
+| `prompts/blog-draft.md` | Blog essay generation |
+| `prompts/blog-cover.md` | Concept cover generation |
+| `prompts/revision-plan.md` | Select articles that need revision |
 | `prompts/banger-eval.md` | Viral scoring criteria (advanced) |
 | `prompts/reply.md` | Reply analysis (advanced) |
 | `strategies.json` | Customizable content strategies |
@@ -134,7 +139,7 @@ Initialize a new ship project in the current directory.
 Process all files in `input/` and generate posts.
 
 ```bash
-# Basic usage (auto-selects 8 diverse strategies)
+# Basic usage (plans up to 8 distinct, grounded posts)
 ship work
 
 # List available strategies
@@ -854,3 +859,7 @@ Tokens are stored in the private `.shippost-grok/subscription.json` file with ow
 References: [OpenCode provider documentation](https://opencode.ai/docs/providers/#xai) and [Grok subscription usage](https://docs.x.ai/grok/faq).
 
 Grok request diagnostics are recorded privately in `.shippost-grok/requests.jsonl`: request purpose, duration, outcome, prompt fingerprint/character count, and token/cache/reasoning counts when returned by the provider. Prompts, response text, credentials, and raw errors are not logged. Diagnostics do not change reasoning effort or trigger extra requests.
+
+Automatic social generation makes one shared angle plan before drafting. It excludes strategies requiring visual assets, preserves your style guide, and uses the configured post count as a maximum: it may produce fewer posts when the notes do not support enough distinct ideas. Each draft still receives an independent evaluation. Strategy runs use `social-plan.md` and `social-strategy.md`; `system.md` and `work.md` continue to control legacy generation with `--no-strategies`.
+
+Blog essays use their own JSON-output contract instead of the social system prompt. Revision checks exclude articles with the same source meeting, then make one relevance-selection request before revising selected articles individually. New task prompts are copied into your workspace's `prompts/` directory when first needed; existing customized files are never overwritten. Shared style, source notes, and the angle plan precede the per-post assignment to improve prefix-cache reuse. Reasoning effort is unchanged.
