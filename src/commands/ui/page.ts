@@ -114,7 +114,7 @@ export const PAGE = `<!doctype html>
   @media (max-width: 800px) { .app-nav { padding: 16px; } .generate-layout { grid-template-columns: 1fr; } .generate-sidebar { position: static; } }
   .queue-counts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px; }
   .queue-counts strong { display: block; font-size: 24px; font-weight: 500; font-variant-numeric: tabular-nums; }
-  #genSubsteps, .queue-counts .active strong, .queue-counts .active span { color: #22c55e; }
+  #genSubsteps, .queue-item.active .queue-title, .queue-counts .active strong, .queue-counts .active span { color: #22c55e; }
   .queue-counts span { color: var(--muted); font-size: 12px; }
 </style>
 </head>
@@ -648,10 +648,9 @@ function renderProcessing(s) {
   }
   $('queueItems').replaceChildren();
   for (const [file, item] of items) {
-    const row = document.createElement('div'); row.className = 'queue-item';
+    const row = document.createElement('div'); row.className = 'queue-item' + (item.active ? ' active' : '');
     const title = document.createElement('div'); title.className = 'queue-title'; title.textContent = renderProcessing.titles.get(file) || 'Meeting';
-    const state = document.createElement('small'); state.textContent = (item.active ? 'Processing' : 'Waiting') + (item.targets.length ? ' · ' + [...new Set(item.targets)].join(', ') : '');
-    row.append(title, state); $('queueItems').append(row);
+    row.append(title); $('queueItems').append(row);
     if (renderProcessing.titles.has(file)) continue;
     api('GET', '/api/transcripts/content?name=' + encodeURIComponent(file)).then(r => {
       const heading = r.content.match(/^# (.+)/);
