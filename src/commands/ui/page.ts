@@ -107,10 +107,10 @@ export const PAGE = `<!doctype html>
   .panel-heading h2 { font-size: 14px; margin: 0; font-weight: 600; }
   .panel-heading a, #queueCount { font-size: 12px; color: var(--muted); }
   .queue-item { padding: 14px 0; border-top: 1px solid var(--line); }
-  .queue-title { font: 18px/1.35 Georgia, serif; overflow-wrap: anywhere; }
+  .queue-title { min-height: 49px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font: 18px/1.35 Georgia, serif; overflow-wrap: anywhere; }
   .queue-item small, .quiet { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
   .quiet { margin: 12px 0 0; }
-  .queue-panel #genStatusText { max-height: 110px; overflow: auto; }
+  .queue-panel #genStatusText { height: 36px; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
   @media (max-width: 800px) { .app-nav { padding: 16px; } .generate-layout { grid-template-columns: 1fr; } .generate-sidebar { position: static; } }
 </style>
 </head>
@@ -187,10 +187,6 @@ export const PAGE = `<!doctype html>
         <div class="panel-heading"><h2>Processing</h2><span id="queueCount">0</span></div>
         <div id="queueItems"><p class="quiet">Queue empty</p></div>
         <div id="genStatus" style="display:none"><p id="genStatusText" class="quiet" role="status"></p></div>
-      </section>
-      <section class="card usage-panel">
-        <div class="panel-heading"><h2>Grok</h2><a href="https://grok.com/" target="_blank" rel="noopener noreferrer" title="Open Grok, then Settings → Usage">Plan usage ↗</a></div>
-        <p id="grokUsage" class="quiet">Plan allowance available in Grok.</p>
       </section>
     </aside></div>
   </section>
@@ -516,7 +512,6 @@ function initGenerate() {
   $('genProcess').onclick = processTranscript;
   $('genSkip').onclick = skipTranscript;
   $('genSync').onclick = syncGranola;
-  refreshGrokUsage();
   watchGenerate(); // pick up any batch already running server-side
 }
 
@@ -619,6 +614,10 @@ function skipTranscript() {
 }
 
 function renderProcessing(s) {
+  const key = JSON.stringify([s.active, s.activeTarget, s.queue, s.queued, s.running]);
+  if (renderProcessing.lastKey === key) return;
+  renderProcessing.lastKey = key;
+  renderProcessing.titles ||= new Map();
   const items = new Map();
   const labels = { social: 'Social', blog: 'Blog', revisions: 'Revisions' };
   if (s.active) items.set(s.active, { active: true, targets: s.activeTarget ? [labels[s.activeTarget]] : [] });
@@ -630,12 +629,15 @@ function renderProcessing(s) {
   $('queueItems').replaceChildren();
   for (const [file, item] of items) {
     const row = document.createElement('div'); row.className = 'queue-item';
-    const title = document.createElement('div'); title.className = 'queue-title'; title.textContent = 'Meeting';
+    const title = document.createElement('div'); title.className = 'queue-title'; title.textContent = renderProcessing.titles.get(file) || 'Meeting';
     const state = document.createElement('small'); state.textContent = (item.active ? 'Processing' : 'Waiting') + (item.targets.length ? ' · ' + [...new Set(item.targets)].join(', ') : '');
     row.append(title, state); $('queueItems').append(row);
+    if (renderProcessing.titles.has(file)) continue;
     api('GET', '/api/transcripts/content?name=' + encodeURIComponent(file)).then(r => {
       const heading = r.content.match(/^# (.+)/);
-      title.textContent = heading ? heading[1] : file.replace(/\\.(txt|md)$/, '').replace(/_/g, ' ');
+      const name = heading ? heading[1] : file.replace(/\\.(txt|md)$/, '').replace(/_/g, ' ');
+      renderProcessing.titles.set(file, name);
+      title.textContent = name; title.title = name;
     }).catch(() => { title.textContent = 'Meeting'; });
   }
   if (!s.queue && s.queued) {
@@ -643,15 +645,6 @@ function renderProcessing(s) {
   }
   if (!items.size && !s.queued) $('queueItems').textContent = 'Queue empty';
 }
-async function refreshGrokUsage() {
-  try {
-    const usage = await api('GET', '/api/grok/usage');
-    $('grokUsage').textContent = fmtN(usage.tokens) + ' tokens in Shippost';
-    $('grokUsage').title = 'Completed local calls only. This is not your subscription allowance. Open Grok → Settings → Usage for the remaining allowance and reset time.';
-  } catch { $('grokUsage').textContent = 'Plan allowance available in Grok.'; }
-}
-setInterval(() => { if (activeTab === 'generate') refreshGrokUsage(); }, 30000);
-
 function watchGenerate() {
   if (gpolling) return;
   gpolling = true;

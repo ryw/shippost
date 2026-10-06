@@ -1,4 +1,3 @@
-import { grokUsage } from '../../services/grok-usage.js';
 import { syncGranolaAPI } from '../../services/granola-api.js';
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { spawn, exec } from 'child_process';
@@ -446,8 +445,6 @@ export async function uiCommand(options: UiOptions): Promise<void> {
           await saveMeta(meta);
           return send(200, JSON.stringify({ ok: true }));
         }
-
-        if (route === 'GET /api/grok/usage') return send(200, JSON.stringify(grokUsage(cwd)));
 
         if (route === 'GET /api/generate/status') {
           const job = jobs['generate'];
