@@ -16,10 +16,13 @@ test('identical polling responses preserve queue DOM and do not refetch titles',
   assert.deepEqual(nodes.queueByType.children.map(node => node.children[0].textContent), ['1', '1', '0']);
   assert.equal(nodes.queueByType.children[0].className, 'active');
   const firstRow = nodes.queueItems.children[0];
-  status.progress = { current: 3, total: 16, label: 'Drafting social posts' };
+  status.progress = { current: 1, total: 8, label: 'Drafting social posts' };
   context.renderProcessing(status);
-  assert.equal(nodes.genSubsteps.textContent, 'Drafting social posts · Substep 3/16');
+  assert.equal(nodes.genSubsteps.textContent, 'Drafting post 1/8');
   assert.equal(nodes.queueItems.children[0], firstRow);
+  status.progress.label = 'Evaluating social posts';
+  context.renderProcessing(status);
+  assert.equal(nodes.genSubsteps.textContent, 'Evaluating post 1/8');
   writes = 0;
   for (let i = 0; i < 5; i++) context.renderProcessing(structuredClone(status));
   assert.equal(writes, 0);

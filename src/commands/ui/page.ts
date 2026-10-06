@@ -621,7 +621,8 @@ function skipTranscript() {
 
 function renderProcessing(s) {
   const progress = s.running && s.active ? s.progress : null;
-  const stepText = progress ? progress.label + ' · Substep ' + progress.current + '/' + progress.total : (s.running && s.active ? 'Preparing…' : '');
+  const stepLabels = { 'Drafting social posts': 'Drafting post', 'Evaluating social posts': 'Evaluating post', 'Social posts': 'Processing post', 'Preparing social posts': 'Preparing posts', 'Choosing post strategies': 'Choosing strategies', 'Drafting essays': 'Drafting essay', 'Preparing drafts and covers': 'Preparing draft', 'Checking articles': 'Checking article' };
+  const stepText = progress ? (stepLabels[progress.label] || progress.label) + ' ' + progress.current + '/' + progress.total : (s.running && s.active ? 'Preparing…' : '');
   if ($('genSubsteps').textContent !== stepText) $('genSubsteps').textContent = stepText;
   const key = JSON.stringify([s.active, s.activeTarget, s.queue, s.queued, s.running, s.waitingByType]);
   if (renderProcessing.lastKey === key) return;
