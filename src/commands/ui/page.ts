@@ -114,7 +114,7 @@ export const PAGE = `<!doctype html>
   @media (max-width: 800px) { .app-nav { padding: 16px; } .generate-layout { grid-template-columns: 1fr; } .generate-sidebar { position: static; } }
   .queue-counts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px; }
   .queue-counts strong { display: block; font-size: 24px; font-weight: 500; font-variant-numeric: tabular-nums; }
-  .queue-counts .active strong, .queue-counts .active span { color: #22c55e; }
+  #genSubsteps, .queue-counts .active strong, .queue-counts .active span { color: #22c55e; }
   .queue-counts span { color: var(--muted); font-size: 12px; }
 </style>
 </head>
