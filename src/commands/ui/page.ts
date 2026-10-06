@@ -140,7 +140,7 @@ export const PAGE = `<!doctype html>
   </section>
   <section class="view" id="view-review">
     <div class="toolbar">
-      <button class="ghost" id="stageApproved">Stage next approved</button>
+      <button class="ghost" id="stageApproved">Retry send</button>
       <span class="dim" id="approvedNote" style="color:var(--muted);font-size:13px"></span>
     </div>
     <div class="card" id="card">
@@ -314,8 +314,9 @@ function initReview() {
 
 function refreshApproved() {
   api('GET', '/api/approved-posts').then((d) => {
-    $('approvedNote').textContent = d.posts.length ? d.posts.length + ' approved, not staged' : 'No approved posts waiting';
+    $('approvedNote').textContent = d.posts.length ? d.posts.length + ' waiting to send' : '';
     $('stageApproved').disabled = d.posts.length === 0;
+    $('stageApproved').hidden = d.posts.length === 0;
   }).catch(() => {});
 }
 
@@ -356,9 +357,9 @@ async function decide(action) {
   if (!p) return;
   busy = true;
   try {
-    await api('POST', '/api/decision', { id: p.id, action, content: $('content').value });
+    const result = await api('POST', '/api/decision', { id: p.id, action, content: $('content').value });
     localStorage.removeItem('draft:' + p.id);
-    toast(action === 'approve' ? 'Approved for staging' : 'Rejected');
+    toast(action === 'approve' ? (result.staged ? 'Sent to Typefully as a draft' : '⚠️ ' + result.error) : 'Rejected');
     queue.splice(idx, 1);
     showPost();
     refreshApproved();
@@ -951,6 +952,17 @@ function renderSettings(data) {
       const help = document.createElement('small');
       help.textContent = 'Use a key with Personal notes access. Save settings, then open Generate → Sync Granola to import notes from the past 30 days.';
       label.append(help);
+    }
+    if (secret.key === 'TYPEFULLY_API_KEY' && secret.source !== 'environment') {
+      const saveKey = document.createElement('button'); saveKey.type = 'button'; saveKey.textContent = 'Save Typefully key';
+      saveKey.onclick = async () => {
+        saveKey.disabled = true;
+        try {
+          renderSettings(await api('POST', '/api/typefully/key', { key: $('secret-TYPEFULLY_API_KEY').value }));
+          $('settingsStatus').textContent = 'Typefully key saved. Return to Review to retry sending.';
+        } catch (error) { $('settingsStatus').textContent = error.message; saveKey.disabled = false; }
+      };
+      label.append(saveKey);
     }
     if (secret.configured && secret.source !== 'environment') {
       const clear = document.createElement('label'); clear.className = 'settings-field check';

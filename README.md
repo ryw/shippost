@@ -492,7 +492,7 @@ ship review --min-score 70
 ship ui
 ```
 
-Approve posts during review, then use the Review tab's "Stage next approved" button to create Typefully drafts. The draft URL is displayed for quick access.
+Approving a post in the Review tab automatically sends the edited content to Typefully as an unpublished draft. If sending fails, the approval and edits stay saved; use **Retry send** to try again. Terminal review still saves approval locally for later staging.
 
 > **Note:** Posts are created as drafts, not published. Requires Typefully Pro plan.
 

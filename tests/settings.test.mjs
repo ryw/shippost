@@ -125,6 +125,11 @@ test('UI boots without config; settings writes require same-origin session token
       req.on('error', reject); req.end();
     });
     assert.equal(invalidHostStatus, 403);
+    assert.equal((await write({}, '/api/typefully/key', { key: 'fixture' })).status, 403);
+    assert.equal((await write({ 'X-Settings-Token': token }, '/api/typefully/key', { key: '' })).status, 400);
+    const keySaved = await write({ 'X-Settings-Token': token }, '/api/typefully/key', { key: 'fixture-typefully-key' });
+    assert.equal(keySaved.status, 200);
+    assert.ok(!JSON.stringify(await keySaved.json()).includes('fixture-typefully-key'));
     assert.equal((await write({}, '/api/grok/connect', {})).status, 403);
     assert.equal((await write({ 'X-Settings-Token': token, Origin: 'https://untrusted.example' }, '/api/grok/poll', {})).status, 403);
     const grokStatus = await write({ 'X-Settings-Token': token }, '/api/grok/poll', {});
