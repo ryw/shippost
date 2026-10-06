@@ -1,3 +1,4 @@
+import { GrokService } from './grok.js';
 import type { T2pConfig } from '../types/config.js';
 import type { LLMService } from './llm-service.js';
 import { OllamaService } from './ollama.js';
@@ -12,6 +13,8 @@ export function createLLMService(config: T2pConfig): LLMService {
   switch (provider) {
     case 'ollama':
       return new OllamaService(config);
+    case 'grok':
+      return new GrokService(config);
     case 'anthropic':
       return new AnthropicService(config);
     default:

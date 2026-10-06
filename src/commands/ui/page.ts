@@ -1,6 +1,4 @@
 // Single-page client for `ship ui`. Served inline — no build step, no deps.
-// Client JS uses string concatenation (not template literals) because this
-// whole page lives inside a TS template literal.
 export const PAGE = `<!doctype html>
 <html lang="en">
 <head>
@@ -89,11 +87,38 @@ export const PAGE = `<!doctype html>
   #settingsStatus { flex-basis: 100%; margin: 0; overflow-wrap: anywhere; }
   #settingsStatus:empty { display: none; }
   input[type=checkbox] { accent-color: var(--accent); width: 15px; height: 15px; }
+  #genCard { padding: 32px; }
+  #genCard h1 { font: 30px/1.2 Georgia, serif; letter-spacing: -.6px; margin: 0 0 18px; overflow-wrap: anywhere; }
+  #genCard .meta { margin-bottom: 12px; }
+  #genSummary { color: var(--muted); margin: 0 0 24px; line-height: 1.65; }
+  #genSummary:empty { display: none; }
+  #genDetails { border-top: 1px solid var(--line); padding-top: 16px; }
+  #genDetails summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+  #genText { max-height: 360px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 16px; }
+  #genCard .actions { margin-top: 28px; }
+  .gen-outputs { font-size: 12px; color: var(--muted); margin: 12px 0 0; }
+  #genSync { margin-left: auto; }
+  @media (max-width: 480px) { #genCard { padding: 22px; } #genCard h1 { font-size: 26px; } }
+  .app-nav { max-width: none; margin: 0; padding: 18px 32px; border-bottom: 1px solid var(--line); background: var(--card); }
+  main.wide { max-width: 1180px; }
+  .generate-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 28px; align-items: start; }
+  .generate-sidebar { position: sticky; top: 24px; }
+  .panel-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+  .panel-heading h2 { font-size: 14px; margin: 0; font-weight: 600; }
+  .panel-heading a, #queueCount { font-size: 12px; color: var(--muted); }
+  .queue-item { padding: 14px 0; border-top: 1px solid var(--line); }
+  .queue-title { min-height: 49px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font: 18px/1.35 Georgia, serif; overflow-wrap: anywhere; }
+  .queue-item small, .quiet { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+  .quiet { margin: 12px 0 0; }
+  .queue-panel #genStatusText { height: 36px; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  @media (max-width: 800px) { .app-nav { padding: 16px; } .generate-layout { grid-template-columns: 1fr; } .generate-sidebar { position: static; } }
+  .queue-counts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px; }
+  .queue-counts strong { display: block; font-size: 24px; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .queue-counts span { color: var(--muted); font-size: 12px; }
 </style>
 </head>
 <body>
-<main>
-  <nav>
+<nav class="app-nav">
     <span class="brand">ship</span>
     <a href="#generate" data-tab="generate">Generate</a>
     <a href="#review" data-tab="review">Review</a>
@@ -102,7 +127,8 @@ export const PAGE = `<!doctype html>
     <a href="#unfollow" data-tab="unfollow">Unfollow</a>
     <a href="#settings" data-tab="settings">Settings</a>
     <span id="progress"></span>
-  </nav>
+</nav>
+<main>
 
   <section class="view" id="view-settings">
     <div class="settings-intro"><h1>Your workspace</h1><p id="settingsIntro">Choose how you generate and where your drafts go.</p></div>
@@ -136,32 +162,37 @@ export const PAGE = `<!doctype html>
   </section>
 
   <section class="view" id="view-generate">
+    <div class="generate-layout"><div>
     <div class="toolbar">
-      <label for="genRange">Meetings</label>
-      <select id="genRange" class="ghost"><option value="last_30_days">Past 30 days</option><option value="all">All dates</option></select>
+      <select aria-label="Meeting date range" id="genRange" class="ghost"><option value="last_30_days">Past 30 days</option><option value="all">All dates</option></select>
       <button class="ghost" id="genSync">Sync Granola</button>
     </div>
     <p id="genSyncError" role="alert" style="display:none"></p>
-    <p id="genRangeNote" style="color:var(--muted);font-size:13px"></p>
-    <p id="genTargetNote" style="color:var(--muted);font-size:13px">Generate social posts, blog drafts, and article revision proposals together. Completed outputs are skipped on retry.</p>
-    <div class="toolbar" id="genStatus" style="display:none">
-      <span class="dim" id="genStatusText" style="color:var(--muted);font-size:13px"></span>
-    </div>
     <div class="card" id="genCard" style="display:none">
-      <div class="meta">
-        <span class="badge" id="genName"></span>
-        <span id="genWho"></span>
-        <span id="chars-gen" style="margin-left:auto" class="dim"></span>
-      </div>
-      <div id="genSummary" style="font-style:italic;color:var(--muted);margin-bottom:12px"></div>
-      <div id="genText" class="serif" style="max-height:340px;overflow-y:auto;white-space:pre-wrap;border-top:1px solid var(--line);padding-top:12px"></div>
+      <div class="meta" id="genWho"></div>
+      <h1 id="genName"></h1>
+      <p id="genSummary"></p>
+      <details id="genDetails">
+        <summary>Meeting notes</summary>
+        <div id="genText" class="serif"></div>
+      </details>
       <div class="actions">
         <button class="primary" id="genProcess">Generate all 3</button>
         <button class="ghost" id="genSkip">Skip</button>
       </div>
+      <p class="gen-outputs">Social posts · Blog draft · Article revisions</p>
     </div>
     <div class="empty" id="genDone" style="display:none">No transcripts waiting. 🎉</div>
     <pre class="log" id="genLog" style="display:none"></pre>
+    </div>
+    <aside class="generate-sidebar">
+      <section class="card queue-panel">
+        <div class="panel-heading"><h2>Processing</h2><span id="queueCount">Waiting</span></div>
+        <div id="queueByType" class="queue-counts"></div>
+        <div id="queueItems"><p class="quiet">Queue empty</p></div>
+        <div id="genStatus" style="display:none"><p id="genStatusText" class="quiet" role="status"></p></div>
+      </section>
+    </aside></div>
   </section>
 
   <section class="view" id="view-reply">
@@ -252,6 +283,7 @@ const tabInits = { review: false, generate: false, reply: false, stats: false, u
 function showTab(name) {
   if (!Object.hasOwn(tabInits, name)) name = 'settings';
   activeTab = name;
+  document.querySelector('main').classList.toggle('wide', name === 'generate');
   document.querySelectorAll('.view').forEach((v) => v.classList.remove('active'));
   document.querySelectorAll('nav a').forEach((a) => a.classList.toggle('active', a.dataset.tab === name));
   $('view-' + name).classList.add('active');
@@ -459,8 +491,7 @@ let gqueue = [], gpolling = false;
 
 function generateRange() { return $('genRange').value; }
 function updateRangeNote(data) {
-  $('genRangeNote').textContent = data.range === 'all' ? 'Showing all meeting dates, including undated sources.' : 'Past 30 days by meeting date (UTC).' + (data.outsideRange ? ' ' + data.outsideRange + ' older, future, or undated sources hidden.' : '');
-  $('genDone').textContent = data.range !== 'all' && !data.matchingFiles ? 'No meetings from the past 30 days have been imported. Import recent meetings to begin.' : 'No unprocessed transcripts in this date range.';
+  $('genDone').textContent = data.range !== 'all' && !data.matchingFiles ? 'No recent meetings. Sync Granola to start.' : 'All caught up.';
 }
 
 function generateTarget() { return 'all'; }
@@ -529,6 +560,11 @@ function syncGranola() {
   }).catch((e) => { $('genSyncError').textContent = e.message; $('genSyncError').style.display = 'block'; });
 }
 
+function shortSummary(text) {
+  const plain = text.replace(/[#*_]/g, '').replace(/\\s+/g, ' ').trim();
+  return plain.length > 220 ? plain.slice(0, 217).replace(/\\s+\\S*$/, '') + '…' : plain;
+}
+
 async function showTranscript() {
   const t = gqueue[0];
   if (activeTab === 'generate') $('progress').textContent = t ? gqueue.length + ' waiting' : '';
@@ -539,18 +575,22 @@ async function showTranscript() {
   }
   $('genCard').style.display = 'block';
   $('genDone').style.display = 'none';
-  $('genName').textContent = t.name.replace(/\\.(txt|md)$/, '');
-  $('genWho').textContent = (t.meetingDate ? t.meetingDate + ' · ' : '') + (t.attendees.length ? 'with ' + t.attendees.join(', ') : '');
-  $('chars-gen').textContent = fmtN(t.size) + 'b';
-  $('genSummary').textContent = t.summary || '…';
+  $('genName').textContent = t.name.replace(/\\.(txt|md)$/, '').replace(/^\\d{4}-\\d{2}-\\d{2}[_ -]*/, '').replace(/_/g, ' ');
+  $('genWho').textContent = (t.meetingDate ? t.meetingDate + ' · ' : '') + (t.attendees.length ? t.attendees.slice(0, 2).join(', ') + (t.attendees.length > 2 ? ' +' + (t.attendees.length - 2) : '') : '');
+  $('genDetails').open = false;
+  $('genSummary').textContent = shortSummary(t.summary || '');
   $('genText').textContent = '';
   if (!t.summary) {
     api('POST', '/api/transcripts/summary', { name: t.name })
-      .then((r) => { if (gqueue[0] === t) { t.summary = r.summary; $('genSummary').textContent = r.summary; } })
+      .then((r) => { if (gqueue[0] === t) { t.summary = r.summary; $('genSummary').textContent = shortSummary(r.summary); } })
       .catch(() => { if (gqueue[0] === t) $('genSummary').textContent = ''; });
   }
   api('GET', '/api/transcripts/content?name=' + encodeURIComponent(t.name))
-    .then((r) => { if (gqueue[0] === t) $('genText').textContent = r.content; })
+    .then((r) => { if (gqueue[0] === t) {
+      $('genText').textContent = r.content;
+      const title = r.content.match(/^# (.+)/);
+      if (title) $('genName').textContent = title[1];
+    } })
     .catch(() => {});
 }
 
@@ -577,21 +617,59 @@ function skipTranscript() {
   }).catch((e) => toast('⚠️ ' + e.message));
 }
 
+function renderProcessing(s) {
+  const key = JSON.stringify([s.active, s.activeTarget, s.queue, s.queued, s.running, s.waitingByType]);
+  if (renderProcessing.lastKey === key) return;
+  renderProcessing.lastKey = key;
+  renderProcessing.titles ||= new Map();
+  const items = new Map();
+  const labels = { social: 'Social', blog: 'Blog', revisions: 'Revisions' };
+  if (s.active) items.set(s.active, { active: true, targets: s.activeTarget ? [labels[s.activeTarget]] : [] });
+  for (const item of s.queue || []) {
+    if (!items.has(item.file)) items.set(item.file, { active: false, targets: [] });
+    items.get(item.file).targets.push(labels[item.target]);
+  }
+  const counts = s.waitingByType || (s.queue ? Object.fromEntries(Object.keys(labels).map(type => [type, s.queue.filter(item => item.target === type).length])) : null);
+  $('queueByType').replaceChildren();
+  for (const [type, label] of Object.entries(labels)) {
+    const count = document.createElement('div');
+    const number = document.createElement('strong'); number.textContent = counts ? String(counts[type] || 0) : '—';
+    const name = document.createElement('span'); name.textContent = label;
+    count.append(number, name); $('queueByType').append(count);
+  }
+  $('queueItems').replaceChildren();
+  for (const [file, item] of items) {
+    const row = document.createElement('div'); row.className = 'queue-item';
+    const title = document.createElement('div'); title.className = 'queue-title'; title.textContent = renderProcessing.titles.get(file) || 'Meeting';
+    const state = document.createElement('small'); state.textContent = (item.active ? 'Processing' : 'Waiting') + (item.targets.length ? ' · ' + [...new Set(item.targets)].join(', ') : '');
+    row.append(title, state); $('queueItems').append(row);
+    if (renderProcessing.titles.has(file)) continue;
+    api('GET', '/api/transcripts/content?name=' + encodeURIComponent(file)).then(r => {
+      const heading = r.content.match(/^# (.+)/);
+      const name = heading ? heading[1] : file.replace(/\\.(txt|md)$/, '').replace(/_/g, ' ');
+      renderProcessing.titles.set(file, name);
+      title.textContent = name; title.title = name;
+    }).catch(() => { title.textContent = 'Meeting'; });
+  }
+  if (!items.size && !s.queued) $('queueItems').textContent = 'Queue empty';
+}
 function watchGenerate() {
   if (gpolling) return;
   gpolling = true;
   const tick = async () => {
     try {
       const s = await api('GET', '/api/generate/status');
+      renderProcessing(s);
       if (s.running) {
-        $('genStatus').style.display = 'flex';
-        const name = s.active ? s.active.replace(/\\.(txt|md)$/, '') : '…';
-        $('genStatusText').textContent = '⚙︎ processing ' + name + (s.queued ? ' · ' + s.queued + ' queued' : '') + ' — ' + s.lastLine;
+        if ($('genStatus').style.display !== 'flex') $('genStatus').style.display = 'flex';
+        const message = s.lastLine.trim();
+        if ($('genStatusText').textContent !== message) $('genStatusText').textContent = message;
         setTimeout(tick, 2000);
       } else {
         gpolling = false;
         if ($('genStatus').style.display !== 'none') {
-          $('genStatusText').textContent = s.error ? '⚠️ ' + s.error : '✓ batch done — see the generation log for saved outputs';
+          const message = s.error ? '⚠️ ' + s.error : 'Complete';
+          if ($('genStatusText').textContent !== message) $('genStatusText').textContent = message;
           tabInits.review = false;
           refreshTranscripts().catch(() => {});
         }
@@ -788,14 +866,14 @@ function settingsProvider() {
   const provider = $(settingsFieldId('llm.provider'))?.value;
   const temperature = $(settingsFieldId('generation.temperature'));
   const model = $(settingsFieldId('anthropic.model'))?.value.trim() || '';
-  const supported = provider !== 'anthropic' || new RegExp(settingsData.anthropicTemperaturePattern).test(model);
+  const supported = provider !== 'grok' && (provider !== 'anthropic' || new RegExp(settingsData.anthropicTemperaturePattern).test(model));
   if (temperature) {
     temperature.closest('label').hidden = !supported;
     temperature.disabled = !supported;
   }
   const note = $('temperatureNote');
-  if (note) note.hidden = supported;
-  for (const group of ['Ollama', 'Anthropic']) {
+  if (note) note.hidden = supported || provider === 'grok';
+  for (const group of ['Ollama', 'Anthropic', 'Grok']) {
     const card = $('settings-group-' + group);
     if (card) card.hidden = group.toLowerCase() !== provider;
   }
@@ -874,6 +952,9 @@ function renderSettings(data) {
       clear.append(check, document.createTextNode('Remove saved ' + secret.label)); credentials.append(clear);
     }
   }
+  const grokHelp = document.createElement('p');
+  grokHelp.textContent = 'Uses Grok Build with your Grok account. Sign in on this computer, then test the connection.';
+  group('Grok').append(grokHelp);
   settingsProvider();
 }
 function setSettingsBusy(busy) {

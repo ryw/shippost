@@ -17,17 +17,11 @@ export class AnthropicService implements LLMService {
 
     if (!this.apiKey) {
       throw new Error(
-        'Anthropic API key not found. Set ANTHROPIC_API_KEY environment variable or add to config.'
+        'Anthropic API key not found. Save your key in Settings → Credentials.'
       );
     }
 
-    // Validate API key format
-    if (!this.apiKey.startsWith('sk-ant-')) {
-      throw new Error(
-        'Invalid Anthropic API key format. Please verify your API key is correct.'
-      );
-    }
-
+    // Credential formats may vary across supported API gateways; validate with the API.
     this.client = new Anthropic({
       apiKey: this.apiKey,
     });
@@ -60,11 +54,11 @@ export class AnthropicService implements LLMService {
 
         if (errorStr.includes('401') || errorStr.includes('authentication')) {
           errorMsg += '✗ Authentication failed: Invalid API key\n';
-          errorMsg += `  - Check your API key in .env file or environment\n`;
+          errorMsg += `  - Check the Anthropic API key in Settings → Credentials\n`;
           errorMsg += `  - Verify your key is current and has API access\n`;
         } else if (errorStr.includes('model')) {
           errorMsg += `✗ Model not found: ${this.getModelName()}\n`;
-          errorMsg += '  - Check your model name in .shippostrc.json\n';
+          errorMsg += '  - Check the model in Settings → Anthropic\n';
         } else if (errorStr.includes('network') || errorStr.includes('ENOTFOUND')) {
           errorMsg += '✗ Network error: Cannot reach Anthropic API\n';
           errorMsg += '  - Check your internet connection\n';
