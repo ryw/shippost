@@ -669,18 +669,16 @@ function watchGenerate() {
       const s = await api('GET', '/api/generate/status');
       renderProcessing(s);
       if (s.running) {
-        if ($('genStatus').style.display !== 'flex') $('genStatus').style.display = 'flex';
-        const message = s.lastLine.trim();
-        if ($('genStatusText').textContent !== message) $('genStatusText').textContent = message;
+        if ($('genStatus').style.display !== 'none') $('genStatus').style.display = 'none';
         setTimeout(tick, 2000);
       } else {
         gpolling = false;
-        if ($('genStatus').style.display !== 'none') {
-          const message = s.error ? '⚠️ ' + s.error : 'Complete';
-          if ($('genStatusText').textContent !== message) $('genStatusText').textContent = message;
-          tabInits.review = false;
-          refreshTranscripts().catch(() => {});
-        }
+        const display = s.error ? 'flex' : 'none';
+        if ($('genStatus').style.display !== display) $('genStatus').style.display = display;
+        const message = s.error ? '⚠️ ' + s.error : '';
+        if ($('genStatusText').textContent !== message) $('genStatusText').textContent = message;
+        tabInits.review = false;
+        refreshTranscripts().catch(() => {});
       }
     } catch { gpolling = false; }
   };
