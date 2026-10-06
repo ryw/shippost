@@ -191,7 +191,7 @@ async function openBundle(cwd: string, bundle: Bundle, branch: string, run: Run)
       if (process.env.TEMBO_SESSION_ID) await run('tembo', ['merge', `origin/${base}`], worktree);
       await prepareBlogBundle(cwd, worktree, bundle, run);
       const title = `content: ${bundle.newPosts[0] || 'article revisions'}`;
-      if (process.env.TEMBO_SESSION_ID) await run('tembo', ['commit', '-m', title, '--repository-url', `https://github.com/${repository}`], worktree);
+      if (process.env.TEMBO_SESSION_ID) await run('tembo', ['commit', '-m', title, '--repository-url', `https://github.com/${repository}`, '--', ...Object.keys(bundle.files), ...(bundle.newPosts.length ? ['src/lib/homepage-sections.ts'] : [])], worktree);
       else {
         await run('git', ['commit', '-m', title], worktree);
         await run('git', ['push', '-u', 'origin', branch], worktree);

@@ -6,7 +6,7 @@ STYLE GUIDE:
 EXISTING PUBLISHED ESSAYS:
 {{publishedPosts}}
 
-When the list is nonempty, each essay must contain at least one natural inline markdown cross-link to a genuinely related essay in the list. Use only supplied slugs; never invent a slug or force an unrelated link. Choose a genuinely related argument; do not use a random link.
+When the list is nonempty, each essay must contain at least one natural inline markdown cross-link to a genuinely related essay in the list. Use root-level links such as [essay title](/supplied-slug), with no /blog prefix. Use only supplied slugs; never invent a slug or force an unrelated link. Choose a genuinely related argument; do not use a random link.
 
 INSTRUCTIONS:
 Identify the distinct atomic arguments in this transcript and generate ONE short blog post per argument. Generate between 1 and 3 posts.
