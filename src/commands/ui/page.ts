@@ -653,14 +653,15 @@ function watchGenerate() {
       const s = await api('GET', '/api/generate/status');
       renderProcessing(s);
       if (s.running) {
-        $('genStatus').style.display = 'flex';
-        const name = s.active ? s.active.replace(/\\.(txt|md)$/, '') : '…';
-        $('genStatusText').textContent = s.lastLine.replace(/^\\s+/, '');
+        if ($('genStatus').style.display !== 'flex') $('genStatus').style.display = 'flex';
+        const message = s.lastLine.trim();
+        if ($('genStatusText').textContent !== message) $('genStatusText').textContent = message;
         setTimeout(tick, 2000);
       } else {
         gpolling = false;
         if ($('genStatus').style.display !== 'none') {
-          $('genStatusText').textContent = s.error ? '⚠️ ' + s.error : 'Complete';
+          const message = s.error ? '⚠️ ' + s.error : 'Complete';
+          if ($('genStatusText').textContent !== message) $('genStatusText').textContent = message;
           tabInits.review = false;
           refreshTranscripts().catch(() => {});
         }
