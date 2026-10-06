@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, rmdirSync, statSync } from 'fs';
+import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, rmdirSync, statSync, renameSync, unlinkSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
@@ -321,7 +321,11 @@ export class FileSystemService {
     const statePath = join(this.cwd, '.shippost-state.json');
 
     try {
-      writeFileSync(statePath, JSON.stringify(state, null, 2), 'utf-8');
+      const temporary = statePath + '.' + randomUUID() + '.tmp';
+      try {
+        writeFileSync(temporary, JSON.stringify(state, null, 2), { mode: 0o600, flag: 'wx' });
+        renameSync(temporary, statePath);
+      } finally { if (existsSync(temporary)) unlinkSync(temporary); }
     } catch (error) {
       throw new FileSystemError(`Failed to save state: ${(error as Error).message}`);
     }

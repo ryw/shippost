@@ -893,3 +893,13 @@ The worker needs authenticated GitHub access, Git, and pnpm. In this hosted codi
 environment it uses the provided verified commit/PR integration; on your computer
 it uses Git and the GitHub CLI (`gh auth login`). Only one worker prepares PRs at a
 time. Local progress is stored in the ignored `.shippost-blog-prs.json` file.
+
+Generation selections and the active target are saved atomically in
+`.shippost-generation-queue.json`. Starting `ship ui` automatically resumes that
+queue, checking saved completion state before each target. If a worker survived
+the previous UI process, recovery waits for it before deciding whether to retry.
+Provider failures remain available for explicit retry through Generate.
+
+Recovery is at the meeting/target boundary: an interrupted target may repeat
+model calls whose results were not saved. Completed targets are skipped. This
+recovers app restarts; the UI still needs to be started after the machine boots.

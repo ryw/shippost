@@ -1,3 +1,4 @@
+import { loadGenerationQueue, saveGenerationQueue, recoverGenerationQueue, generationWorkerAlive, type GenerationItem } from '../../services/generation-queue.js';
 import { startBlogPrWorker, readBlogPrStatus, processBlogPrs } from '../../services/blog-prs.js';
 import { createReviewActions } from '../../services/review-actions.js';
 import { GrokAuth } from '../../services/grok-auth.js';
@@ -117,7 +118,9 @@ export async function uiCommand(options: UiOptions): Promise<void> {
   const review = createReviewActions(fs, () => typefully ||= new TypefullyService(fs.loadConfig().typefully?.socialSetId));
   let rewriteLLM: LLMService | null = null;
   const jobs: Record<string, Job> = {};
-  const genQueue: Array<{ file: string; target: GenerationTarget }> = [];
+  const genQueue: GenerationItem[] = recoverGenerationQueue(loadGenerationQueue(cwd));
+  let activeItem: GenerationItem | null = null;
+  const persistGeneration = () => saveGenerationQueue(cwd, genQueue, activeItem);
   let genActive: string | null = null;
   let genActiveTarget: GenerationTarget | null = null;
 
@@ -215,6 +218,59 @@ export async function uiCommand(options: UiOptions): Promise<void> {
       .finally(() => { job.running = false; });
     return true;
   };
+
+  const runGeneration = () => startJob('generate', async (job) => {
+    let item: GenerationItem | undefined;
+    const failures: string[] = [];
+    try {
+      while ((item = genQueue.shift())) {
+        activeItem = item;
+        persistGeneration();
+        const { file: f, target } = item;
+        genActive = f;
+        genActiveTarget = target;
+        job.log.push(`▸ ${target}: ${f}`);
+        while (generationWorkerAlive(item)) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        const meta = loadMeta();
+        if (fs.isFileProcessed(join(cwd, 'input', f), fs.loadState(), target) || meta[f]?.skipped || meta[f]?.skippedTargets?.[target]) {
+          activeItem = null; persistGeneration(); continue;
+        }
+        await new Promise<void>((resolve, reject) => {
+          const child = spawn(process.execPath, [process.argv[1], 'work', '--all', '--files', f, '--target', target], { cwd });
+          activeItem = { file: f, target, pid: child.pid };
+          persistGeneration();
+          let output = '';
+          const onData = (chunk: Buffer) => {
+            output += stripAnsi(chunk.toString());
+            stripAnsi(chunk.toString()).split('\n').forEach((line) => {
+              if (line.trim()) job.log.push(line.trimEnd());
+            });
+          };
+          child.stdout.on('data', onData);
+          child.stderr.on('data', onData);
+          child.on('close', (code) => {
+            if (code === 0) return resolve();
+            const reason = output.split('\n').map(line => line.trim())
+              .find(line => /^✗|^Error:|^error:/i.test(line));
+            reject(new Error(reason?.replace(/^✗\s*/, '') || `Generation stopped (exit ${code}).`));
+          });
+          child.on('error', reject);
+        }).catch((error) => {
+          const message = `${target}: ${f}: ${(error as Error).message}`;
+          failures.push(message);
+          job.log.push(`✗ ${message}`);
+        });
+        activeItem = null;
+        persistGeneration();
+      }
+      if (failures.length) throw new Error(failures.join('; '));
+    } finally {
+      genActive = null;
+      genActiveTarget = null;
+    }
+  });
 
   const xApi = async (): Promise<{ api: XApiService; username: string }> => {
     const config = fs.loadConfig();
@@ -500,49 +556,8 @@ export async function uiCommand(options: UiOptions): Promise<void> {
             .filter(t => !meta[file]?.skipped && !meta[file]?.skippedTargets?.[t] &&
               !fs.isFileProcessed(join(cwd, 'input', file), state, t))
             .map(target => ({ file, target }))));
-          startJob('generate', async (job) => {
-            let item: { file: string; target: GenerationTarget } | undefined;
-            const failures: string[] = [];
-            try {
-              while ((item = genQueue.shift())) {
-                const { file: f, target } = item;
-                genActive = f;
-                genActiveTarget = target;
-                job.log.push(`▸ ${target}: ${f}`);
-                await new Promise<void>((resolve, reject) => {
-                  const child = spawn(process.execPath, [process.argv[1], 'work', '--all', '--files', f, '--target', target], { cwd });
-                  let output = '';
-                  const onData = (chunk: Buffer) => {
-                    output += stripAnsi(chunk.toString());
-                    stripAnsi(chunk.toString()).split('\n').forEach((line) => {
-                      if (line.trim()) job.log.push(line.trimEnd());
-                    });
-                  };
-                  child.stdout.on('data', onData);
-                  child.stderr.on('data', onData);
-                  child.on('close', (code) => {
-                    if (code === 0) return resolve();
-                    const reason = output.split('\n').map(line => line.trim())
-                      .find(line => /^✗|^Error:|^error:/i.test(line));
-                    reject(new Error(reason?.replace(/^✗\s*/, '') || `Generation stopped (exit ${code}).`));
-                  });
-                  child.on('error', reject);
-                }).catch((error) => {
-                  const message = `${target}: ${f}: ${(error as Error).message}`;
-                  failures.push(message);
-                  job.log.push(`✗ ${message}`);
-                });
-              }
-              if (failures.length) throw new Error(failures.join('; '));
-            } catch (error) {
-              // Return unstarted work to the selectable queue after a failure.
-              genQueue.length = 0;
-              throw error;
-            } finally {
-              genActive = null;
-              genActiveTarget = null;
-            }
-          });
+          persistGeneration();
+          runGeneration();
           return send(202, JSON.stringify({ queued: genQueue.length }));
         }
 
@@ -853,6 +868,7 @@ export async function uiCommand(options: UiOptions): Promise<void> {
     });
 
     server.listen(port, '127.0.0.1', () => {
+      if (genQueue.length && isShippostProject(cwd)) runGeneration();
       const url = `http://127.0.0.1:${port}`;
       logger.blank();
       logger.success(`ship ui running at ${url}`);
