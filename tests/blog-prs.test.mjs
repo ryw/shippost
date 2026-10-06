@@ -92,3 +92,20 @@ test('the generated page script remains valid JavaScript', async () => {
   const {PAGE}=await import('../dist/commands/ui/page.js');
   assert.doesNotThrow(()=>new Function(PAGE.match(/<script>([\s\S]*?)<\/script>/)[1]));
 });
+test('panel hides merged/closed PRs without deleting history and caches GitHub polling', async t => {
+  const {createBlogPrPanel}=await import('../dist/services/blog-prs.js');
+  const {cwd,write}=fixture(t);const url='https://github.com/ryw/rywalker.com/pull/998';
+  write('.shippost-blog-prs.json',{a:{status:'opened',url},b:{status:'opened',url:'https://github.com/ryw/rywalker.com/pull/997'},c:{status:'preparing'}});
+  let time=0,calls=0,output=url;
+  const panel=createBlogPrPanel(cwd,async()=>{calls++;return output;},()=>time);
+  assert.deepEqual((await panel()).map(r=>r.status),['opened','preparing']);
+  await Promise.all([panel(),panel()]);assert.equal(calls,1);
+  time=60_001;output='';assert.deepEqual((await panel()).map(r=>r.status),['preparing']);
+  assert.equal(Object.keys(readBlogPrStatus(cwd)).length,3);
+});
+test('panel retains last known statuses when GitHub is unavailable', async t => {
+  const {createBlogPrPanel}=await import('../dist/services/blog-prs.js');
+  const {cwd,write}=fixture(t);write('.shippost-blog-prs.json',{a:{status:'opened',url:'https://github.com/ryw/rywalker.com/pull/998'}});
+  let time=0;const panel=createBlogPrPanel(cwd,async()=>{if(time)throw Error('offline');return '';},()=>time);
+  assert.deepEqual(await panel(),[]);time=60_001;assert.deepEqual(await panel(),[]);
+});

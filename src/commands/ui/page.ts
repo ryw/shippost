@@ -194,7 +194,7 @@ export const PAGE = `<!doctype html>
         <div id="queueItems"><p class="quiet">Queue empty</p></div>
         <div id="genStatus" style="display:none"><p id="genStatusText" class="quiet" role="status"></p></div>
       </section>
-      <section class="card"><h2>Website PRs</h2><div id="blogPrs" class="quiet">Waiting for completed meetings</div></section>
+      <section class="card"><h2>Website PRs</h2><div id="blogPrs" class="quiet">No open website PRs</div></section>
     </aside></div>
   </section>
 
@@ -528,7 +528,7 @@ async function refreshBlogPrs() {
         }
         panel.append(row);
       }
-      if (!panel.childElementCount) panel.textContent = 'Waiting for completed meetings';
+      if (!panel.childElementCount) panel.textContent = 'No open website PRs';
       if (records.some(r => r.status === 'failed')) { const retry = document.createElement('button'); retry.textContent = 'Retry PR preparation'; retry.onclick = () => api('POST', '/api/blog-prs/retry', {}).then(refreshBlogPrs).catch(e => toast(e.message)); panel.append(retry); }
     }
   } catch {}

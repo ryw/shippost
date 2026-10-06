@@ -1,5 +1,5 @@
 import { loadGenerationQueue, saveGenerationQueue, recoverGenerationQueue, generationWorkerAlive, type GenerationItem } from '../../services/generation-queue.js';
-import { startBlogPrWorker, readBlogPrStatus, processBlogPrs } from '../../services/blog-prs.js';
+import { startBlogPrWorker, createBlogPrPanel, processBlogPrs } from '../../services/blog-prs.js';
 import { createReviewActions } from '../../services/review-actions.js';
 import { GrokAuth } from '../../services/grok-auth.js';
 import { generationProgress } from './progress.js';
@@ -113,6 +113,7 @@ const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
 export async function uiCommand(options: UiOptions): Promise<void> {
   const cwd = process.cwd();
   startBlogPrWorker(cwd);
+  const blogPrPanel = createBlogPrPanel(cwd);
   const fs = new FileSystemService(cwd);
   let typefully: TypefullyService | null = null;
   const review = createReviewActions(fs, () => typefully ||= new TypefullyService(fs.loadConfig().typefully?.socialSetId));
@@ -480,7 +481,7 @@ export async function uiCommand(options: UiOptions): Promise<void> {
           return send(200, JSON.stringify({ ok: true }));
         }
 
-        if (route === 'GET /api/blog-prs') return send(200, JSON.stringify(Object.values(readBlogPrStatus(cwd))));
+        if (route === 'GET /api/blog-prs') return send(200, JSON.stringify(await blogPrPanel()));
         if (route === 'POST /api/blog-prs/retry') {
           if (req.headers['x-settings-token'] !== settingsToken) return send(403, JSON.stringify({ error: 'Reload the page before retrying PR preparation' }));
           void processBlogPrs(cwd, { retry: true }).catch(error => logger.error(error.message));

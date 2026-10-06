@@ -37,6 +37,35 @@ export function readBlogPrStatus(cwd: string): Record<string, PrRecord> {
   const file = join(cwd, LEDGER);
   return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {};
 }
+/** Keep publication history intact; only the review panel follows GitHub's open PRs. */
+export function createBlogPrPanel(cwd: string, run: Run = runCommand, now = Date.now) {
+  const cache = new Map<string, { checkedAt: number; urls?: Set<string>; pending?: Promise<void> }>();
+  return async () => {
+    const records = Object.values(readBlogPrStatus(cwd));
+    const repositoryFor = (record: PrRecord) => record.url?.match(/^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/\d+$/)?.[1];
+    const repositories = [...new Set(records.map(repositoryFor).filter((repo): repo is string => !!repo))];
+    await Promise.all(repositories.map(async repository => {
+      let entry = cache.get(repository);
+      if (!entry) { entry = { checkedAt: -Infinity }; cache.set(repository, entry); }
+      if (entry.pending) return entry.pending;
+      if (now() - entry.checkedAt < 60_000) return;
+      const current = entry;
+      current.pending = (async () => {
+        try {
+          const output = await run('gh', ['api', '--paginate', `repos/${repository}/pulls?state=open&per_page=100`, '--jq', '.[].html_url'], cwd);
+          current.urls = new Set(output.split(/\r?\n/).filter(Boolean));
+        } catch { /* Preserve the last known status during temporary GitHub failures. */ }
+        finally { current.checkedAt = now(); }
+      })();
+      try { await current.pending; } finally { current.pending = undefined; }
+    }));
+    return records.filter(record => {
+      const repository = repositoryFor(record);
+      const urls = repository && cache.get(repository)?.urls;
+      return !record.url || !urls || urls.has(record.url);
+    });
+  };
+}
 function saveStatus(cwd: string, records: Record<string, PrRecord>) {
   const file = join(cwd, LEDGER);
   writeFileSync(file + '.tmp', JSON.stringify(records, null, 2) + '\n', { mode: 0o600 });
