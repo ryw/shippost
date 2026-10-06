@@ -875,9 +875,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
           } else {
             // Auto-select strategies based on content analysis
             if (contentAnalyzer && config.generation.strategies?.autoSelect !== false) {
-              if (options.verbose) {
-                logger.info('  Analyzing content...');
-              }
+              logger.info(`  Substep 0/${postCount} · Choosing post strategies`);
 
               const analysis = await contentAnalyzer.analyzeTranscript(transcript);
 
@@ -910,7 +908,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
             try {
               // Show which strategy is being processed
               logger.info(`  ${progress} ${strategy.name}...`);
-              logger.info(`  Substep ${i * 2 + 1}/${selectedStrategies.length * 2} · Drafting social posts`);
+              logger.info(`  Substep ${i + 1}/${selectedStrategies.length} · Drafting social posts`);
 
               const strategyPrompt = buildStrategyPrompt(
                 systemPrompt,
@@ -947,7 +945,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
 
                 // Evaluate banger potential
                 try {
-                  logger.info(`  Substep ${i * 2 + 2}/${selectedStrategies.length * 2} · Evaluating social posts`);
+                  logger.info(`  Substep ${i + 1}/${selectedStrategies.length} · Evaluating social posts`);
                   const evalPrompt = buildBangerEvalPrompt(bangerEvalTemplate, postData.content);
                   const evalResponse = await llm.generate(evalPrompt);
                   const evaluation = parseBangerEval(evalResponse);

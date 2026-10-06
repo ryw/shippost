@@ -845,14 +845,10 @@ To suspend X integration, turn off **Settings → X → Enable X API access**. T
 
 ### Grok subscription provider
 
-Select **grok** in Settings to generate through the official Grok Build CLI using your Grok account. Grok Build must be installed on the computer running Shippost. Authenticate once from the workspace:
+Select **grok** in Settings, click **Connect Grok**, then open the sign-in link and enter the displayed code. This uses your SuperGrok subscription through device-code OAuth, following [OpenCode's subscription integration](https://github.com/anomalyco/opencode/blob/772392050500e0ddcd2ad2193411a22a3824372f/packages/opencode/src/plugin/xai.ts). No Grok Build installation or pay-as-you-go API key is required. Save the provider and model; the default is `grok-4.7`.
 
-```bash
-GROK_HOME="$PWD/.shippost-grok" grok login --device-auth
-```
+Shippost sends requests directly to the Responses endpoint with your subscription token. It supplies no tools, does not launch a coding agent, does not use the X/Twitter API, and ignores `XAI_API_KEY`. Temperature is not sent. Subscription eligibility, allowance, and billing remain controlled by your Grok account.
 
-Complete the official sign-in link, save the Grok provider/model in Settings, and test the connection. The default model is `grok-4.7`. Grok manages its own credentials in `.shippost-grok/`, which Settings adds to `.gitignore`; this directory also contains native session state and must remain private. Shippost does not read or return the tokens. Subscription eligibility, limits, and billing are controlled by your Grok account.
+Tokens are stored in the private `.shippost-grok/subscription.json` file with owner-only permissions, refreshed automatically, and never returned to the browser. An existing workspace Grok Build sign-in is imported automatically; use **Reconnect Grok** if it expires or you continue using another client with the old sign-in. Keep `.shippost-grok/` ignored by Git. Existing prompts remain editable and the three-output workflow is unchanged.
 
-Generation sends the existing editable prompts through a temporary owner-only prompt file, deletes it afterward, and disables tools, search, and subagents. This provider does not use the X/Twitter API or an inherited xAI API key. Temperature is not sent. The existing three-output workflow and per-target retries are unchanged.
-
-References: [Grok Build](https://docs.x.ai/build/overview), [headless usage](https://docs.x.ai/build/cli/headless-scripting), and [Grok subscription usage](https://docs.x.ai/grok/faq).
+References: [OpenCode provider documentation](https://opencode.ai/docs/providers/#xai) and [Grok subscription usage](https://docs.x.ai/grok/faq).

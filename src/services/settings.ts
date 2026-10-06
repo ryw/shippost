@@ -1,3 +1,4 @@
+import { GrokAuth } from './grok-auth.js';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync, unlinkSync, lstatSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -69,6 +70,7 @@ export function getSettings(cwd: string) {
   const defaults: Record<string, unknown> = { 'grok.model': 'grok-4.7', 'x.enabled': true, 'x.apiTier': 'free', 'typefully.socialSetId': '1', 'blog.outputDir': 'src/content/drafts', 'blog.imageDir': 'public/images/posts', 'blog.imagePathPrefix': '/images/posts' };
   return {
     initialized: isShippostProject(cwd),
+    grokConnected: new GrokAuth(cwd).connected(),
     anthropicModels: ANTHROPIC_MODELS,
     anthropicTemperaturePattern: ANTHROPIC_TEMPERATURE_PATTERN.source,
     fields: SETTINGS_FIELDS.map(field => ({ ...field, value: get(config, field.key) ?? defaults[field.key] ?? '', environment: field.env && process.env[field.env] ? field.env : undefined })),

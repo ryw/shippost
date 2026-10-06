@@ -957,8 +957,27 @@ function renderSettings(data) {
     }
   }
   const grokHelp = document.createElement('p');
-  grokHelp.textContent = 'Uses Grok Build with your Grok account. Sign in on this computer, then test the connection.';
-  group('Grok').append(grokHelp);
+  grokHelp.textContent = settingsData.grokConnected ? 'Subscription connected' : 'Use your Grok subscription.';
+  const grokConnect = document.createElement('button'); grokConnect.type = 'button';
+  grokConnect.textContent = settingsData.grokConnected ? 'Reconnect Grok' : 'Connect Grok';
+  grokConnect.onclick = async () => {
+    grokConnect.disabled = true;
+    try {
+      const login = await api('POST', '/api/grok/connect', {});
+      const link = document.createElement('a'); link.href = login.url; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = 'Open Grok sign-in';
+      grokHelp.replaceChildren(link, document.createTextNode(' · Code: ' + login.code));
+      const poll = async () => {
+        try {
+          const result = await api('POST', '/api/grok/poll', {});
+          if (result.status === 'pending') { setTimeout(poll, 5000); return; }
+          grokHelp.textContent = result.status === 'connected' ? 'Subscription connected' : 'Connect again to finish sign-in.';
+          grokConnect.textContent = 'Reconnect Grok'; grokConnect.disabled = false;
+        } catch (error) { grokHelp.textContent = error.message; grokConnect.disabled = false; }
+      };
+      setTimeout(poll, 5000);
+    } catch (error) { grokHelp.textContent = error.message; grokConnect.disabled = false; }
+  };
+  group('Grok').append(grokHelp, grokConnect);
   settingsProvider();
 }
 function setSettingsBusy(busy) {

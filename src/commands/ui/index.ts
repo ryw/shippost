@@ -1,3 +1,4 @@
+import { GrokAuth } from '../../services/grok-auth.js';
 import { generationProgress } from './progress.js';
 import { syncGranolaAPI } from '../../services/granola-api.js';
 import { createServer, IncomingMessage, ServerResponse } from 'http';
@@ -247,6 +248,13 @@ export async function uiCommand(options: UiOptions): Promise<void> {
           return send(403, JSON.stringify({ error: 'Local same-origin access required' }));
         }
         if (route === 'GET /') return send(200, PAGE.replace('__SHIPPOST_SETTINGS_TOKEN__', settingsToken), 'text/html');
+        if (route === 'POST /api/grok/connect' || route === 'POST /api/grok/poll') {
+          if (req.headers['x-settings-token'] !== settingsToken) return send(403, JSON.stringify({ error: 'Reload the page before connecting Grok' }));
+          const auth = new GrokAuth(cwd);
+          try {
+            return send(200, JSON.stringify(route.endsWith('/connect') ? await auth.start() : await auth.poll()));
+          } catch (error) { return send(400, JSON.stringify({ error: (error as Error).message })); }
+        }
         if (route === 'GET /api/settings') return send(200, JSON.stringify(getSettings(cwd)));
         if (route === 'POST /api/settings' || route === 'POST /api/settings/test') {
           if (req.headers['x-settings-token'] !== settingsToken) return send(403, JSON.stringify({ error: 'Reload the page before changing settings' }));
@@ -453,7 +461,7 @@ export async function uiCommand(options: UiOptions): Promise<void> {
             running: job?.running ?? false,
             active: genActive,
             activeTarget: genActiveTarget,
-            progress: job?.running && genActive ? generationProgress(job.log) : null,
+            progress: job?.running && genActive ? generationProgress(job.log, fs.loadConfig().generation.postsPerTranscript) : null,
             queue: genQueue,
             queued: genQueue.length,
             waitingByType: Object.fromEntries(GENERATION_TARGETS.map(target => [target, genQueue.filter(item => item.target === target).length])),

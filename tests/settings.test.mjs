@@ -125,6 +125,10 @@ test('UI boots without config; settings writes require same-origin session token
       req.on('error', reject); req.end();
     });
     assert.equal(invalidHostStatus, 403);
+    assert.equal((await write({}, '/api/grok/connect', {})).status, 403);
+    assert.equal((await write({ 'X-Settings-Token': token, Origin: 'https://untrusted.example' }, '/api/grok/poll', {})).status, 403);
+    const grokStatus = await write({ 'X-Settings-Token': token }, '/api/grok/poll', {});
+    assert.deepEqual(await grokStatus.json(), { status: 'disconnected' });
 
   } finally {
     child.kill(); await once(child, 'exit'); rmSync(cwd, { recursive: true, force: true });

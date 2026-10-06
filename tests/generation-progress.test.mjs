@@ -13,3 +13,12 @@ test('progress follows the latest phase and validates counts', () => {
 test('already running social workers report post progress', () => {
   assert.deepEqual(generationProgress(['▸ social: a.md', '[3/3] Processing files...', '  Generating 8 posts...', '  [2/8] Strategy...']), { current: 2, total: 8, label: 'Social posts' });
 });
+
+test('preparation shows zero of the planned posts before the first result', () => {
+  assert.deepEqual(generationProgress(['▸ social: a.md', 'Processing file...'], 8), { current: 0, total: 8, label: 'Preparing social posts' });
+  assert.deepEqual(generationProgress(['▸ social: a.md', 'Substep 0/8 · Choosing post strategies']), { current: 0, total: 8, label: 'Choosing post strategies' });
+});
+
+test('older active workers show post count instead of double-counting evaluation', () => {
+  assert.deepEqual(generationProgress(['▸ social: a.md', 'Generating 8 posts...', 'Substep 6/16 · Evaluating social posts']), { current: 3, total: 8, label: 'Evaluating social posts' });
+});
