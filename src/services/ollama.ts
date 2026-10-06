@@ -1,3 +1,4 @@
+import { reportModelMetrics } from './generation-metrics.js';
 import { Ollama } from 'ollama';
 import type { T2pConfig } from '../types/config.js';
 import type { LLMService } from './llm-service.js';
@@ -60,6 +61,7 @@ export class OllamaService implements LLMService {
         },
       });
 
+      reportModelMetrics({ inputTokens: response.prompt_eval_count, outputTokens: response.eval_count });
       return response.response;
     } catch (error) {
       if ((error as Error).message.includes('model')) {

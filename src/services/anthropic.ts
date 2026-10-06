@@ -1,3 +1,4 @@
+import { reportModelMetrics } from './generation-metrics.js';
 import Anthropic from '@anthropic-ai/sdk';
 import type { T2pConfig } from '../types/config.js';
 import { DEFAULT_ANTHROPIC_MODEL, anthropicSupportsTemperature } from './anthropic-models.js';
@@ -87,6 +88,8 @@ export class AnthropicService implements LLMService {
           },
         ],
       });
+
+      if (response.usage) reportModelMetrics({ inputTokens: response.usage.input_tokens + (response.usage.cache_read_input_tokens ?? 0) + (response.usage.cache_creation_input_tokens ?? 0), cachedInputTokens: response.usage.cache_read_input_tokens, outputTokens: response.usage.output_tokens });
 
       // Extract text from response
       // Newer models can interleave thinking and multiple text blocks.

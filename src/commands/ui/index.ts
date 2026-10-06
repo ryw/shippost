@@ -1,3 +1,4 @@
+import { readGenerationMetrics } from '../../services/generation-metrics.js';
 import { loadGenerationQueue, saveGenerationQueue, recoverGenerationQueue, generationWorkerAlive, type GenerationItem } from '../../services/generation-queue.js';
 import { startBlogPrWorker, createBlogPrPanel, processBlogPrs } from '../../services/blog-prs.js';
 import { createReviewActions } from '../../services/review-actions.js';
@@ -481,6 +482,7 @@ export async function uiCommand(options: UiOptions): Promise<void> {
           return send(200, JSON.stringify({ ok: true }));
         }
 
+        if (route === 'GET /api/generate/metrics') return send(200, JSON.stringify(readGenerationMetrics(cwd)));
         if (route === 'GET /api/blog-prs') return send(200, JSON.stringify(await blogPrPanel()));
         if (route === 'POST /api/blog-prs/retry') {
           if (req.headers['x-settings-token'] !== settingsToken) return send(403, JSON.stringify({ error: 'Reload the page before retrying PR preparation' }));

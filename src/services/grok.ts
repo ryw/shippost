@@ -1,3 +1,4 @@
+import { reportModelMetrics, hasRequestMetricsContext } from './generation-metrics.js';
 import { appendFileSync, mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { createHash, randomUUID } from 'crypto';
@@ -20,6 +21,8 @@ export class GrokService implements LLMService {
     try { return await this.request(prompt, metrics); }
     finally {
       metrics.elapsedMs = Date.now() - started;
+      metrics.instrumented = hasRequestMetricsContext();
+      reportModelMetrics(metrics);
       // Diagnostics must never store prompts, responses, credentials, or upstream errors.
       try {
         const directory = join(this.cwd, '.shippost-grok');
@@ -30,7 +33,10 @@ export class GrokService implements LLMService {
     }
   }
   private async request(prompt: string, metrics: Record<string, unknown>): Promise<string> {
+    const authStarted = Date.now();
     const token = await this.auth.accessToken();
+    metrics.authMs = Date.now() - authStarted;
+    const requestStarted = Date.now();
     let response: Response;
     try {
       response = await fetch('https://api.x.ai/v1/responses', {
@@ -43,6 +49,7 @@ export class GrokService implements LLMService {
       metrics.outcome = (error as Error).name === 'TimeoutError' ? 'timeout' : 'network-error';
       throw new Error((error as Error).name === 'TimeoutError' ? 'Grok timed out. Retry this target.' : 'Could not reach Grok. Check your connection and retry.');
     }
+    metrics.responseHeadersMs = Date.now() - requestStarted;
     metrics.httpStatus = response.status;
     if (!response.ok) {
       metrics.outcome = 'http-error';
@@ -52,7 +59,9 @@ export class GrokService implements LLMService {
       if (response.status === 403) throw new Error('Your Grok subscription cannot access this model. Check your plan and selected model.');
       throw new Error(`Grok request failed (HTTP ${response.status}). Retry this target.`);
     }
+    const bodyStarted = Date.now();
     const data = await response.json() as any;
+    metrics.bodyMs = Date.now() - bodyStarted;
     const tokenCount = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? value : null;
     metrics.inputTokens = tokenCount(data.usage?.input_tokens);
     metrics.cachedInputTokens = tokenCount(data.usage?.input_tokens_details?.cached_tokens);

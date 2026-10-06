@@ -1,3 +1,4 @@
+import { instrumentLLM } from './generation-metrics.js';
 import { GrokService } from './grok.js';
 import type { T2pConfig } from '../types/config.js';
 import type { LLMService } from './llm-service.js';
@@ -12,11 +13,11 @@ export function createLLMService(config: T2pConfig): LLMService {
 
   switch (provider) {
     case 'ollama':
-      return new OllamaService(config);
+      return instrumentLLM(new OllamaService(config), provider);
     case 'grok':
-      return new GrokService(config);
+      return instrumentLLM(new GrokService(config), provider);
     case 'anthropic':
-      return new AnthropicService(config);
+      return instrumentLLM(new AnthropicService(config), provider);
     default:
       throw new Error(`Unknown LLM provider: ${provider}`);
   }

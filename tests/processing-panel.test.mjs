@@ -37,3 +37,17 @@ test('identical polling responses preserve queue DOM and do not refetch titles',
   assert.ok(nodes.queueByType.children.every(node => node.className === ''));
   assert.equal(reads, 1, 'changed status reuses the cached meeting title');
 });
+
+test('diagnostics polling keeps details and table stable while elapsed time changes', async () => {
+  let writes=0;
+  const element=()=>({value:'',children:[],set textContent(v){writes++;this.value=v;},get textContent(){return this.value;},append(...v){writes++;this.children.push(...v);},replaceChildren(){writes++;this.children=[];},style:{}});
+  const nodes={metricsActive:element(),metricsBody:element()};
+  const data={sampleSize:0,purposes:[],recent:[],runs:[],active:[{purpose:'blog-draft',elapsedMs:1000,status:'running'}]};
+  const context=vm.createContext({$:id=>nodes[id],document:{createElement:element},api:async()=>data});
+  const script=PAGE.match(/<script>([\s\S]*)<\/script>/)[1];
+  vm.runInContext(script.slice(script.indexOf('const timingLabels'),script.indexOf('let blogPrTimer')),context);
+  await context.refreshGenerationMetrics();const table=nodes.metricsBody.children[1];writes=0;
+  await context.refreshGenerationMetrics();assert.equal(writes,0);
+  data.active[0].elapsedMs=2000;await context.refreshGenerationMetrics();
+  assert.equal(writes,1);assert.equal(nodes.metricsBody.children[1],table);
+});

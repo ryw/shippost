@@ -1,3 +1,4 @@
+import { beginGenerationRun } from '../services/generation-metrics.js';
 import { revisionCatalog, discoverRevisionCandidates } from '../services/revision-candidates.js';
 import { readdirSync, readFileSync, statSync, existsSync, mkdirSync, writeFileSync, renameSync, realpathSync } from 'fs';
 import { join, relative, basename } from 'path';
@@ -723,11 +724,14 @@ export async function workCommand(options: WorkOptions): Promise<void> {
       }
     }
 
+    const finishMetrics = beginGenerationRun(cwd, relativePath, target);
+    let metricsOutcome = "failed";
     try {
       // Read transcript
       const transcript = readFileSync(filePath, 'utf-8');
 
       if (transcript.trim().length === 0) {
+        metricsOutcome = 'empty';
         logger.info('  Skipped (empty file)');
         continue;
       }
@@ -1070,11 +1074,12 @@ export async function workCommand(options: WorkOptions): Promise<void> {
       state = fs.markFileProcessed(filePath, target === 'revisions' ? updatedCount : target === 'blog' ? blogDraftCount : postsGenerated, fs.loadState(), target);
       fs.saveState(state);
 
+      metricsOutcome = 'completed';
       logger.success(`  ✓ Done — ${remaining} transcript${remaining === 1 ? '' : 's'} remaining`);
     } catch (error) {
       logger.error(`  Failed: ${(error as Error).message}`);
       totalErrors++;
-    }
+    } finally { finishMetrics(metricsOutcome); }
   }
 
   // Summary

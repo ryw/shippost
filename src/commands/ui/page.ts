@@ -194,6 +194,7 @@ export const PAGE = `<!doctype html>
         <div id="queueItems"><p class="quiet">Queue empty</p></div>
         <div id="genStatus" style="display:none"><p id="genStatusText" class="quiet" role="status"></p></div>
       </section>
+      <section class="card"><details id="generationMetrics"><summary>Generation diagnostics</summary><p id="metricsActive" class="quiet"></p><div id="metricsBody" style="overflow-x:auto"></div></details></section>
       <section class="card"><h2>Website PRs</h2><div id="blogPrs" class="quiet">No open website PRs</div></section>
     </aside></div>
   </section>
@@ -510,8 +511,42 @@ async function refreshTranscripts() {
   showTranscript();
 }
 
+const timingLabels = { 'social-plan':'Planning', 'social-draft':'Drafting', 'social-evaluation':'Evaluation', 'blog-draft':'Essays', 'blog-cover':'Covers', 'revision-discovery':'Essay discovery', 'revision-plan':'Revision selection', 'article-revision':'Rewriting' };
+const seconds = n => n == null ? '—' : (n / 1000).toFixed(1) + 's';
+const tokens = n => n == null ? '—' : n.toLocaleString();
+async function refreshGenerationMetrics() {
+  try {
+    const d = await api('GET', '/api/generate/metrics');
+    const active = d.active.map(r => (timingLabels[r.purpose] || r.purpose) + ' · ' + seconds(r.elapsedMs) + (r.status === 'interrupted' ? ' · interrupted' : ' · running')).join(' / ');
+    if ($('metricsActive').textContent !== active) $('metricsActive').textContent = active;
+    const completedRuns = d.runs.filter(r => r.outcome !== 'running');
+    const key = JSON.stringify([d.sampleSize, d.purposes, d.recent, completedRuns]);
+    if (refreshGenerationMetrics.key === key) return;
+    refreshGenerationMetrics.key = key;
+    const body = $('metricsBody'); body.replaceChildren();
+    const note = document.createElement('p'); note.className = 'quiet'; note.textContent = 'Last ' + d.sampleSize + ' calls · tokens are provider-reported; — means unavailable.'; body.append(note);
+    const table = document.createElement('table'); table.style.cssText = 'width:100%;font-size:12px;text-align:left;border-spacing:8px';
+    const head = document.createElement('tr');
+    for (const name of ['Step','Calls','Median','p95','In / out']) { const th = document.createElement('th'); th.textContent = name; head.append(th); }
+    table.append(head);
+    for (const r of d.purposes) {
+      const row = document.createElement('tr'); row.title = r.provider + ' / ' + r.model;
+      for (const value of [timingLabels[r.purpose] || r.purpose, r.calls, seconds(r.medianMs), seconds(r.p95Ms), tokens(r.inputTokens) + ' / ' + tokens(r.outputTokens)]) { const td = document.createElement('td'); td.textContent = value; row.append(td); }
+      table.append(row);
+      const detail = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 5; td.className = 'quiet';
+      td.textContent = tokens(r.cachedInputTokens) + ' cached · ' + tokens(r.reasoningTokens) + ' reasoning · ' + r.failures + ' failed · ' + r.repeatedPrompts + ' repeated · usage ' + r.usageCalls + '/' + r.calls;
+      detail.append(td); table.append(detail);
+    }
+    body.append(table);
+    const help = document.createElement('p'); help.className = 'quiet'; help.textContent = 'Cached tokens are part of input; reasoning is part of output. Repeated means identical prompts, not necessarily retries.'; body.append(help);
+    for (const r of completedRuns.slice(0,3)) { const p = document.createElement('p'); p.className = 'quiet'; p.textContent = r.target + ' · ' + r.outcome + ' · ' + seconds(r.elapsedMs) + ' total · ' + seconds(r.modelMs) + ' model · ' + seconds(r.outsideModelMs) + ' outside model'; p.title = r.source; body.append(p); }
+    if (d.recent.length) { const r=d.recent[0]; const p=document.createElement('p'); p.className='quiet'; p.textContent='Latest: ' + (timingLabels[r.purpose] || r.purpose) + ' · auth ' + seconds(r.authMs) + ' · response headers ' + seconds(r.responseHeadersMs) + ' · body ' + seconds(r.bodyMs); p.title='Response headers include network and provider processing, not time to first generated token.'; body.append(p); }
+  } catch {}
+}
+
 let blogPrTimer;
 async function refreshBlogPrs() {
+  refreshGenerationMetrics();
   try {
     const records = await api('GET', '/api/blog-prs');
     const key = JSON.stringify(records);
