@@ -144,10 +144,10 @@ export class FileSystemService {
     }
   }
 
-  loadPrompt(filename: 'style.md' | 'work.md' | 'system.md' | 'analysis.md' | 'banger-eval.md' | 'content-analysis.md' | 'reply.md' | 'blog-revision.md' | 'social-plan.md' | 'social-strategy.md' | 'blog-draft.md' | 'blog-cover.md' | 'revision-plan.md'): string {
+  loadPrompt(filename: 'style.md' | 'work.md' | 'system.md' | 'analysis.md' | 'banger-eval.md' | 'content-analysis.md' | 'reply.md' | 'blog-revision.md' | 'social-plan.md' | 'social-strategy.md' | 'blog-draft.md' | 'blog-cover.md' | 'revision-discovery.md' | 'revision-plan.md'): string {
     const promptPath = join(this.cwd, 'prompts', filename);
 
-    if (!existsSync(promptPath) && ['social-plan.md', 'social-strategy.md', 'blog-draft.md', 'blog-cover.md', 'revision-plan.md'].includes(filename)) {
+    if (!existsSync(promptPath) && ['social-plan.md', 'social-strategy.md', 'blog-draft.md', 'blog-cover.md', 'revision-discovery.md', 'revision-plan.md'].includes(filename)) {
       mkdirSync(join(this.cwd, 'prompts'), { recursive: true });
       const template = join(dirname(fileURLToPath(import.meta.url)), '../templates', filename);
       try { writeFileSync(promptPath, readFileSync(template), { flag: 'wx' }); }

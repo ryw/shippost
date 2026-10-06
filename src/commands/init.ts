@@ -62,7 +62,7 @@ export async function initCommand(): Promise<void> {
 
     fs.writeFile(join(cwd, 'prompts', 'blog-revision.md'), BLOG_REVISION_TEMPLATE);
 
-    for (const name of ['social-plan.md', 'social-strategy.md', 'blog-draft.md', 'blog-cover.md', 'revision-plan.md'] as const) {
+    for (const name of ['social-plan.md', 'social-strategy.md', 'blog-draft.md', 'blog-cover.md', 'revision-discovery.md', 'revision-plan.md'] as const) {
       fs.loadPrompt(name);
       logger.success(`Created file: prompts/${name}`);
     }

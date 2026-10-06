@@ -1,4 +1,4 @@
-export type LLMPurpose = 'unspecified' | 'social-plan' | 'revision-plan' | 'content-analysis' | 'social-draft' | 'social-evaluation' | 'blog-draft' | 'blog-cover' | 'article-revision';
+export type LLMPurpose = 'unspecified' | 'social-plan' | 'revision-discovery' | 'revision-plan' | 'content-analysis' | 'social-draft' | 'social-evaluation' | 'blog-draft' | 'blog-cover' | 'article-revision';
 
 /**
  * Interface for LLM service implementations

@@ -109,3 +109,29 @@ test('panel retains last known statuses when GitHub is unavailable', async t => 
   let time=0;const panel=createBlogPrPanel(cwd,async()=>{if(time)throw Error('offline');return '';},()=>time);
   assert.deepEqual(await panel(),[]);time=60_001;assert.deepEqual(await panel(),[]);
 });
+test('running or failed rechecks block publication until completed', t => {
+  const {cwd,write}=fixture(t);
+  for (const status of ['running','failed']) {
+    write('.shippost-revisions/abc.run.json',{sourceFile:'input/meeting.md',status});
+    assert.deepEqual(collectBlogBundles(cwd),[]);
+  }
+  write('.shippost-revisions/abc.run.json',{sourceFile:'input/meeting.md',status:'completed'});
+  assert.equal(collectBlogBundles(cwd).length,1);
+});
+test('late revisions open one follow-up and original bundled revisions never duplicate', async t => {
+  const {cwd,write}=fixture(t); let queries=0;
+  const run=async(c,args)=>{
+    if(c==='git')return 'https://github.com/ryw/rywalker.com.git';
+    queries++;return JSON.stringify([{url:`https://github.com/ryw/rywalker.com/pull/${900+queries}`}]);
+  };
+  await processBlogPrs(cwd,{run});
+  write('.shippost-revisions/proposal.json',{sourceFile:'input/meeting.md',originalPath:'src/content/posts/related.mdx',originalHash:'expected'});
+  write('.shippost-revisions/proposal.mdx','---\ntitle: Related\n---\nRevised text');
+  await processBlogPrs(cwd,{run}); await processBlogPrs(cwd,{run});
+  assert.equal(queries,2);
+  assert.equal(Object.values(readBlogPrStatus(cwd)).length,2);
+  assert.ok(Object.keys(readBlogPrStatus(cwd)).some(id=>id.includes('-r-')));
+  write('.shippost-blog-prs.json',{});queries=0;
+  await processBlogPrs(cwd,{run}); await processBlogPrs(cwd,{run});
+  assert.equal(queries,1);
+});

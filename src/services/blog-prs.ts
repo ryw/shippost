@@ -31,7 +31,7 @@ export interface Bundle {
 }
 export interface PrRecord {
   source: string; fingerprint: string; status: 'preparing' | 'failed' | 'opened' | 'empty';
-  branch: string; url?: string; error?: string; updatedAt: string;
+  branch: string; revisionFingerprint?: string; url?: string; error?: string; updatedAt: string;
 }
 export function readBlogPrStatus(cwd: string): Record<string, PrRecord> {
   const file = join(cwd, LEDGER);
@@ -105,9 +105,16 @@ export function collectBlogBundles(cwd: string): Bundle[] {
   const config = fs.loadConfig();
   const drafts = safePath(cwd, config.blog?.outputDir || 'src/content/drafts');
   const ready = new Map<string, Bundle>();
+  const runs = join(cwd, '.shippost-revisions');
+  const blocked = new Set<string>();
+  if (existsSync(runs)) for (const name of readdirSync(runs).filter(n => /^[a-f0-9]+\.run\.json$/.test(n))) {
+    const run = JSON.parse(readFileSync(join(runs, name), 'utf8'));
+    if (run.status !== 'completed') blocked.add(run.sourceFile);
+  }
   for (const info of Object.values(fs.loadState().processedFiles)) {
     if (!info.targets?.blog || !info.targets?.revisions) continue;
     const source = relative(cwd, info.path);
+    if (blocked.has(source)) continue;
     if (!source.startsWith('input/') || !existsSync(safePath(cwd, source))) continue;
     ready.set(source, { id: hash(source).slice(0, 16), source, fingerprint: '', files: {}, newPosts: [], revisions: [], originalHashes: {} });
   }
@@ -264,10 +271,16 @@ export async function processBlogPrs(cwd: string, options: { retry?: boolean; ru
   writeFileSync(join(lock, 'pid'), String(process.pid));
   try {
     const records = readBlogPrStatus(cwd);
-    for (const bundle of collectBlogBundles(cwd)) {
+    for (let bundle of collectBlogBundles(cwd)) {
+      const revisions = hash(JSON.stringify(bundle.revisions.map(path => [path, bundle.files[path], bundle.originalHashes[path]])));
+      const original = records[bundle.id];
+      // A completed publication is never rewritten; late revision checks get a review-only follow-up.
+      if (original?.status === 'opened' && bundle.revisions.length && original.revisionFingerprint !== revisions) {
+        bundle = { ...bundle, id: bundle.id + '-r-' + revisions.slice(0, 12), newPosts: [], files: Object.fromEntries(bundle.revisions.map(path => [path, bundle.files[path]])) };
+      }
       const previous = records[bundle.id];
       if (previous?.status === 'opened' || (previous?.fingerprint === bundle.fingerprint && ['failed', 'empty'].includes(previous.status) && !options.retry)) continue;
-      const record: PrRecord = { source: bundle.source, fingerprint: bundle.fingerprint, status: Object.keys(bundle.files).length ? 'preparing' : 'empty', branch: `tembo/meeting-${bundle.id}`, updatedAt: new Date().toISOString() };
+      const record: PrRecord = { source: bundle.source, fingerprint: bundle.fingerprint, revisionFingerprint: revisions, status: Object.keys(bundle.files).length ? 'preparing' : 'empty', branch: `tembo/meeting-${bundle.id}`, updatedAt: new Date().toISOString() };
       records[bundle.id] = record; saveStatus(cwd, records);
       if (record.status === 'empty') continue;
       try { record.url = await openBundle(cwd, bundle, record.branch, options.run || runCommand); record.status = 'opened'; }

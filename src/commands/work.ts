@@ -1,4 +1,5 @@
-import { readdirSync, readFileSync, statSync, existsSync, mkdirSync, writeFileSync, realpathSync } from 'fs';
+import { revisionCatalog, discoverRevisionCandidates } from '../services/revision-candidates.js';
+import { readdirSync, readFileSync, statSync, existsSync, mkdirSync, writeFileSync, renameSync, realpathSync } from 'fs';
 import { join, relative, basename } from 'path';
 import { FileSystemService } from '../services/file-system.js';
 import { createLLMService } from '../services/llm-factory.js';
@@ -427,47 +428,38 @@ ${result.body}`;
   return filePath;
 }
 
-function findBlogPosts(
-  dirs: string[],
-  limitPerDir: number = 5,
-  sourceFile?: string
-): Array<{ name: string; path: string; mtime: Date }> {
-  // Take top N per directory rather than across the combined set, otherwise
-  // a directory with many recently-touched files (drafts) crowds out files
-  // from other directories (published posts) entirely.
-  const result: Array<{ name: string; path: string; mtime: Date }> = [];
-
-  for (const dir of dirs) {
-    if (!existsSync(dir)) continue;
-    try {
-      const dirFiles: Array<{ name: string; path: string; mtime: Date }> = [];
-      for (const file of readdirSync(dir)) {
-        if (!file.endsWith('.md') && !file.endsWith('.mdx')) continue;
-        const filePath = join(dir, file);
-        const content = readFileSync(filePath, 'utf8');
-        const frontmatter = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-        const source = frontmatter?.[1].match(/^source:\s*(.+)$/m)?.[1].trim().replace(/^['"]|['"]$/g, '');
-        if (sourceFile && source && basename(source) === basename(sourceFile)) continue;
-        dirFiles.push({ name: file, path: filePath, mtime: statSync(filePath).mtime });
-      }
-      dirFiles.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
-      result.push(...dirFiles.slice(0, limitPerDir));
-    } catch {
-      // skip unreadable dirs
-    }
-  }
-
-  return result;
+async function proposeRelatedBlogRevisions(
+  llm: LLMService, transcript: string, contentDirs: string[], revisionTemplate: string, sourceFile: string
+): Promise<Array<{ path: string; updated: boolean }>> {
+  const dir = join(process.cwd(), '.shippost-revisions');
+  mkdirSync(dir, { recursive: true });
+  const marker = join(dir, createHash('sha256').update(sourceFile).digest('hex') + '.run.json');
+  const record = (status: string) => {
+    const temporary = marker + '.' + process.pid + '.tmp';
+    writeFileSync(temporary, JSON.stringify({ sourceFile, status, updatedAt: new Date().toISOString() }));
+    renameSync(temporary, marker);
+  };
+  record('running');
+  try {
+    const results = await runRelatedBlogRevisions(llm, transcript, contentDirs, revisionTemplate, sourceFile);
+    record('completed');
+    return results;
+  } catch (error) { record('failed'); throw error; }
 }
 
-async function proposeRelatedBlogRevisions(
+async function runRelatedBlogRevisions(
   llm: LLMService,
   transcript: string,
   contentDirs: string[],
   revisionTemplate: string,
   sourceFile: string
 ): Promise<Array<{ path: string; updated: boolean }>> {
-  const candidates = findBlogPosts(contentDirs, 5, sourceFile);
+  const fs = new FileSystemService(process.cwd());
+  const catalog = revisionCatalog(contentDirs[1], contentDirs[0], sourceFile);
+  logger.info(`  Scanning ${catalog.length} published essays for relevant arguments`);
+  logger.info(`  Substep 0/1 · Finding related essays`);
+  const candidates = await discoverRevisionCandidates(llm, catalog, transcript, fs.loadPrompt('revision-discovery.md'));
+  logger.info(`  Reviewing ${candidates.length} candidates from ${catalog.length} published essays`);
   if (!candidates.length) return [];
   logger.info(`  Substep 0/${candidates.length} · Selecting related articles`);
   const planTemplate = new FileSystemService(process.cwd()).loadPrompt('revision-plan.md');
@@ -1075,7 +1067,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
       remaining--;
 
       // Mark file as processed and save immediately
-      state = fs.markFileProcessed(filePath, postsGenerated, state, target);
+      state = fs.markFileProcessed(filePath, target === 'revisions' ? updatedCount : target === 'blog' ? blogDraftCount : postsGenerated, fs.loadState(), target);
       fs.saveState(state);
 
       logger.success(`  ✓ Done — ${remaining} transcript${remaining === 1 ? '' : 's'} remaining`);

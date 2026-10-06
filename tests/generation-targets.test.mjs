@@ -161,7 +161,7 @@ test('one revision selection request skips unrelated articles without individual
   const cwd = fixture();
   try {
     await run(cwd, {target:'revisions'}, 'skip-revisions');
-    assert.equal(existsSync(join(cwd,'.shippost-revisions')), false);
+    assert.equal(readdirSync(join(cwd,'.shippost-revisions')).filter(n => n.endsWith('.mdx')).length, 0);
     assert.equal(readFileSync(join(cwd,'src/content/posts/existing.mdx'),'utf8'),original);
   } finally { rmSync(cwd,{recursive:true,force:true}); }
 });
