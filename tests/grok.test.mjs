@@ -20,7 +20,7 @@ test('direct generation uses only subscription auth and no tools or temperature'
   globalThis.fetch = async (url, init) => {
     assert.equal(url, 'https://api.x.ai/v1/responses');
     assert.equal(init.headers.Authorization, 'Bearer subscription-token');
-    assert.deepEqual(JSON.parse(init.body), { model: 'grok-4.7', input: 'Synthetic meeting prompt', tools: [], store: false });
+    assert.deepEqual(JSON.parse(init.body), { model: 'grok-4.7', input: 'Synthetic meeting prompt', tools: [], store: false, reasoning: { effort: 'high' } });
     return Response.json({ status: 'completed', output: [{ type: 'reasoning', summary: [] }, { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Generated draft' }] }] });
   };
   const service = new GrokService(config, cwd);
@@ -79,4 +79,14 @@ test('existing native sign-in is imported without launching Grok Build', async t
   const cwd = workspace(t); rmSync(join(cwd, '.shippost-grok/subscription.json'));
   writeFileSync(join(cwd, '.shippost-grok/auth.json'), JSON.stringify({ 'https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828': { key: 'existing-access', refresh_token: 'existing-refresh', expires_at: new Date(Date.now() + 3600000).toISOString() } }));
   assert.equal(await new GrokAuth(cwd).accessToken(), 'existing-access');
+});
+
+test('explicit reasoning effort is forwarded', async t => {
+  const cwd = workspace(t);
+  const original = globalThis.fetch; t.after(() => globalThis.fetch = original);
+  globalThis.fetch = async (url, init) => {
+    assert.equal(JSON.parse(init.body).reasoning.effort, 'medium');
+    return Response.json({ status: 'completed', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Draft' }] }] });
+  };
+  assert.equal(await new GrokService({ ...config, grok: { model: 'grok-4.7', reasoningEffort: 'medium' } }, cwd).generate('test'), 'Draft');
 });

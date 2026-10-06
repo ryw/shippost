@@ -847,7 +847,7 @@ To suspend X integration, turn off **Settings → X → Enable X API access**. T
 
 Select **grok** in Settings, click **Connect Grok**, then open the sign-in link and enter the displayed code. This uses your SuperGrok subscription through device-code OAuth, following [OpenCode's subscription integration](https://github.com/anomalyco/opencode/blob/772392050500e0ddcd2ad2193411a22a3824372f/packages/opencode/src/plugin/xai.ts). No Grok Build installation or pay-as-you-go API key is required. Save the provider and model; the default is `grok-4.7`.
 
-Shippost sends requests directly to the Responses endpoint with your subscription token. It supplies no tools, does not launch a coding agent, does not use the X/Twitter API, and ignores `XAI_API_KEY`. Temperature is not sent. Subscription eligibility, allowance, and billing remain controlled by your Grok account.
+Shippost sends requests directly to the Responses endpoint with your subscription token. It supplies no tools, does not launch a coding agent, does not use the X/Twitter API, and ignores `XAI_API_KEY`. Temperature is not sent. Reasoning effort defaults to **high**; choose low, medium, high, or xhigh in Settings. Subscription eligibility, allowance, and billing remain controlled by your Grok account.
 
 Tokens are stored in the private `.shippost-grok/subscription.json` file with owner-only permissions, refreshed automatically, and never returned to the browser. An existing workspace Grok Build sign-in is imported automatically; use **Reconnect Grok** if it expires or you continue using another client with the old sign-in. Keep `.shippost-grok/` ignored by Git. Existing prompts remain editable and the three-output workflow is unchanged.
 

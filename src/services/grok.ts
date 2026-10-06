@@ -14,7 +14,7 @@ export class GrokService implements LLMService {
       response = await fetch('https://api.x.ai/v1/responses', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: this.getModelName(), input: prompt, tools: [], store: false }),
+        body: JSON.stringify({ model: this.getModelName(), input: prompt, tools: [], store: false, reasoning: { effort: this.config.grok?.reasoningEffort || 'high' } }),
         signal: AbortSignal.timeout(300000),
       });
     } catch (error) {

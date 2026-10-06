@@ -21,6 +21,7 @@ export const SETTINGS_FIELDS: Field[] = [
   { key: 'ollama.model', label: 'Model', group: 'Ollama', type: 'text', required: true },
   { key: 'ollama.timeout', label: 'Request timeout (milliseconds)', group: 'Ollama', type: 'number', min: 1000, max: 3600000, integer: true },
   { key: 'grok.model', label: 'Model', group: 'Grok', type: 'text' },
+  { key: 'grok.reasoningEffort', label: 'Reasoning effort', group: 'Grok', type: 'select', options: ['low', 'medium', 'high', 'xhigh'] },
   { key: 'anthropic.model', label: 'Model', group: 'Anthropic', type: 'text', required: true },
   { key: 'anthropic.maxTokens', label: 'Maximum output tokens', group: 'Anthropic', type: 'number', min: 1, max: 200000, integer: true },
   { key: 'generation.postsPerTranscript', label: 'Posts per transcript', group: 'Generation', type: 'number', min: 1, max: 100, integer: true },
@@ -67,7 +68,7 @@ export function getSettings(cwd: string) {
   loadWorkspaceSecrets(cwd);
   const raw = rawConfig(cwd);
   const config = existsSync(join(cwd, '.shippostrc.json')) ? new FileSystemService(cwd).loadConfig() : DEFAULT_CONFIG;
-  const defaults: Record<string, unknown> = { 'grok.model': 'grok-4.7', 'x.enabled': true, 'x.apiTier': 'free', 'typefully.socialSetId': '1', 'blog.outputDir': 'src/content/drafts', 'blog.imageDir': 'public/images/posts', 'blog.imagePathPrefix': '/images/posts' };
+  const defaults: Record<string, unknown> = { 'grok.model': 'grok-4.7', 'grok.reasoningEffort': 'high', 'x.enabled': true, 'x.apiTier': 'free', 'typefully.socialSetId': '1', 'blog.outputDir': 'src/content/drafts', 'blog.imageDir': 'public/images/posts', 'blog.imagePathPrefix': '/images/posts' };
   return {
     initialized: isShippostProject(cwd),
     grokConnected: new GrokAuth(cwd).connected(),

@@ -13,7 +13,7 @@ export interface T2pConfig {
     model: string;
     timeout?: number;
   };
-  grok?: { model: string };
+  grok?: { model: string; reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh' };
   anthropic?: {
     apiKey?: string;
     model: string;

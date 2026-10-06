@@ -114,6 +114,7 @@ export const PAGE = `<!doctype html>
   @media (max-width: 800px) { .app-nav { padding: 16px; } .generate-layout { grid-template-columns: 1fr; } .generate-sidebar { position: static; } }
   .queue-counts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px; }
   .queue-counts strong { display: block; font-size: 24px; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .queue-counts .active strong, .queue-counts .active span { color: #22c55e; }
   .queue-counts span { color: var(--muted); font-size: 12px; }
 </style>
 </head>
@@ -187,7 +188,7 @@ export const PAGE = `<!doctype html>
     </div>
     <aside class="generate-sidebar">
       <section class="card queue-panel">
-        <div class="panel-heading"><h2>Processing</h2><span id="queueCount">Waiting</span></div>
+        <div class="panel-heading"><h2>Processing</h2><span id="queueCount">Remaining</span></div>
         <div id="queueByType" class="queue-counts"></div>
         <p id="genSubsteps" class="quiet" role="status" style="min-height:36px;margin:12px 0"></p>
         <div id="queueItems"><p class="quiet">Queue empty</p></div>
@@ -637,7 +638,10 @@ function renderProcessing(s) {
   $('queueByType').replaceChildren();
   for (const [type, label] of Object.entries(labels)) {
     const count = document.createElement('div');
-    const number = document.createElement('strong'); number.textContent = counts ? String(counts[type] || 0) : '—';
+    const active = !!(s.running && s.active && s.activeTarget === type);
+    count.className = active ? 'active' : '';
+    count.title = active ? 'Includes the job in progress' : 'Jobs remaining';
+    const number = document.createElement('strong'); number.textContent = counts ? String((counts[type] || 0) + (active ? 1 : 0)) : '—';
     const name = document.createElement('span'); name.textContent = label;
     count.append(number, name); $('queueByType').append(count);
   }

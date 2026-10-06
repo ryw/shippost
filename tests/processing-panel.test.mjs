@@ -13,7 +13,8 @@ test('identical polling responses preserve queue DOM and do not refetch titles',
   const status = { active: 'source.md', activeTarget: 'social', queue: [{ file: 'source.md', target: 'blog' }], queued: 1, running: true };
   context.renderProcessing(status);
   await Promise.resolve();
-  assert.deepEqual(nodes.queueByType.children.map(node => node.children[0].textContent), ['0', '1', '0']);
+  assert.deepEqual(nodes.queueByType.children.map(node => node.children[0].textContent), ['1', '1', '0']);
+  assert.equal(nodes.queueByType.children[0].className, 'active');
   const firstRow = nodes.queueItems.children[0];
   status.progress = { current: 3, total: 16, label: 'Drafting social posts' };
   context.renderProcessing(status);
@@ -26,5 +27,10 @@ test('identical polling responses preserve queue DOM and do not refetch titles',
   assert.equal(nodes.queueItems.children[0], firstRow);
   context.renderProcessing({ ...status, activeTarget: 'blog', queue: [], queued: 0 });
   assert.ok(writes > 0);
+  assert.deepEqual(nodes.queueByType.children.map(node => node.children[0].textContent), ['0', '1', '0']);
+  assert.equal(nodes.queueByType.children[1].className, 'active');
+  context.renderProcessing({ ...status, active: null, activeTarget: null, running: false, queue: [], queued: 0 });
+  assert.deepEqual(nodes.queueByType.children.map(node => node.children[0].textContent), ['0', '0', '0']);
+  assert.ok(nodes.queueByType.children.every(node => node.className === ''));
   assert.equal(reads, 1, 'changed status reuses the cached meeting title');
 });
