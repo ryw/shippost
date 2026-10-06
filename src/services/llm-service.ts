@@ -1,3 +1,5 @@
+export type LLMPurpose = 'unspecified' | 'social-plan' | 'revision-discovery' | 'revision-plan' | 'content-analysis' | 'social-draft' | 'social-evaluation' | 'blog-draft' | 'blog-cover' | 'article-revision';
+
 /**
  * Interface for LLM service implementations
  */
@@ -18,7 +20,7 @@ export interface LLMService {
    * @param prompt The input prompt
    * @returns Generated text response
    */
-  generate(prompt: string): Promise<string>;
+  generate(prompt: string, purpose?: LLMPurpose): Promise<string>;
 
   /**
    * Get the model name being used

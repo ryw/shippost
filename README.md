@@ -122,7 +122,12 @@ Initialize a new ship project in the current directory.
 | `prompts/work.md` | Post generation instructions |
 | `prompts/system.md` | System prompt (advanced) |
 | `prompts/analysis.md` | Style analysis prompt (advanced) |
-| `prompts/content-analysis.md` | Strategy selection (advanced) |
+| `prompts/content-analysis.md` | Legacy content analysis |
+| `prompts/social-plan.md` | Grounded strategy and angle planning |
+| `prompts/social-strategy.md` | Single social-post drafting |
+| `prompts/blog-draft.md` | Blog essay generation |
+| `prompts/blog-cover.md` | Concept cover generation |
+| `prompts/revision-plan.md` | Select articles that need revision |
 | `prompts/banger-eval.md` | Viral scoring criteria (advanced) |
 | `prompts/reply.md` | Reply analysis (advanced) |
 | `strategies.json` | Customizable content strategies |
@@ -134,7 +139,7 @@ Initialize a new ship project in the current directory.
 Process all files in `input/` and generate posts.
 
 ```bash
-# Basic usage (auto-selects 8 diverse strategies)
+# Basic usage (plans up to 8 distinct, grounded posts)
 ship work
 
 # List available strategies
@@ -492,7 +497,7 @@ ship review --min-score 70
 ship ui
 ```
 
-Approve posts during review, then use the Review tab's "Stage next approved" button to create Typefully drafts. The draft URL is displayed for quick access.
+Approving a post in the Review tab automatically sends the edited content to Typefully as an unpublished draft. If sending fails, the approval and edits stay saved; use **Retry send** to try again. Terminal review still saves approval locally for later staging.
 
 > **Note:** Posts are created as drafts, not published. Requires Typefully Pro plan.
 
@@ -845,14 +850,56 @@ To suspend X integration, turn off **Settings → X → Enable X API access**. T
 
 ### Grok subscription provider
 
-Select **grok** in Settings to generate through the official Grok Build CLI using your Grok account. Grok Build must be installed on the computer running Shippost. Authenticate once from the workspace:
+Select **grok** in Settings, click **Connect Grok**, then open the sign-in link and enter the displayed code. This uses your SuperGrok subscription through device-code OAuth, following [OpenCode's subscription integration](https://github.com/anomalyco/opencode/blob/772392050500e0ddcd2ad2193411a22a3824372f/packages/opencode/src/plugin/xai.ts). No Grok Build installation or pay-as-you-go API key is required. Save the provider and model; the default is `grok-4.7`.
 
-```bash
-GROK_HOME="$PWD/.shippost-grok" grok login --device-auth
-```
+Shippost sends requests directly to the Responses endpoint with your subscription token. It supplies no tools, does not launch a coding agent, does not use the X/Twitter API, and ignores `XAI_API_KEY`. Temperature is not sent. Reasoning effort defaults to **high**; choose low, medium, high, or xhigh in Settings. Subscription eligibility, allowance, and billing remain controlled by your Grok account.
 
-Complete the official sign-in link, save the Grok provider/model in Settings, and test the connection. The default model is `grok-4.7`. Grok manages its own credentials in `.shippost-grok/`, which Settings adds to `.gitignore`; this directory also contains native session state and must remain private. Shippost does not read or return the tokens. Subscription eligibility, limits, and billing are controlled by your Grok account.
+Tokens are stored in the private `.shippost-grok/subscription.json` file with owner-only permissions, refreshed automatically, and never returned to the browser. An existing workspace Grok Build sign-in is imported automatically; use **Reconnect Grok** if it expires or you continue using another client with the old sign-in. Keep `.shippost-grok/` ignored by Git. Existing prompts remain editable and the three-output workflow is unchanged.
 
-Generation sends the existing editable prompts through a temporary owner-only prompt file, deletes it afterward, and disables tools, search, and subagents. This provider does not use the X/Twitter API or an inherited xAI API key. Temperature is not sent. The existing three-output workflow and per-target retries are unchanged.
+References: [OpenCode provider documentation](https://opencode.ai/docs/providers/#xai) and [Grok subscription usage](https://docs.x.ai/grok/faq).
 
-References: [Grok Build](https://docs.x.ai/build/overview), [headless usage](https://docs.x.ai/build/cli/headless-scripting), and [Grok subscription usage](https://docs.x.ai/grok/faq).
+Grok request diagnostics are recorded privately in `.shippost-grok/requests.jsonl`: request purpose, duration, outcome, prompt fingerprint/character count, and token/cache/reasoning counts when returned by the provider. Prompts, response text, credentials, and raw errors are not logged. Diagnostics do not change reasoning effort or trigger extra requests.
+
+Automatic social generation makes one shared angle plan before drafting. It excludes strategies requiring visual assets, preserves your style guide, and uses the configured post count as a maximum: it may produce fewer posts when the notes do not support enough distinct ideas. Each draft still receives an independent evaluation. Strategy runs use `social-plan.md` and `social-strategy.md`; `system.md` and `work.md` continue to control legacy generation with `--no-strategies`.
+
+Blog essays use their own JSON-output contract instead of the social system prompt. Revision checks exclude articles with the same source meeting, then make one relevance-selection request before revising selected articles individually. New task prompts are copied into your workspace's `prompts/` directory when first needed; existing customized files are never overwritten. Shared style, source notes, and the angle plan precede the per-post assignment to improve prefix-cache reuse. Reasoning effort is unchanged.
+
+### Website review PRs
+
+In **Settings → Blog**, enable **Open one PR per meeting** and set the GitHub
+repository and target branch. The repository must match the current workspace's
+`origin`. This publisher supports the rywalker.com layout: new drafts in
+`src/content/drafts`, published MDX in `src/content/posts`, SVG covers in
+`public/images/posts`, and the curated homepage in `src/lib/homepage-sections.ts`.
+
+With `ship ui` running, a separate worker waits for both the blog and revisions
+targets to succeed for a meeting. It packages all that meeting's new essays,
+covers, homepage entries, and suggested revisions in **one ready-for-review PR**. An empty
+revision selection does not block new essays. A failed generation target does.
+Generation continues while the worker runs lint and the production build in an
+isolated checkout. Existing installed dependencies are copied only when dependency
+manifests match; otherwise the worker requires a frozen dependency installation.
+
+The Generate sidebar shows PR links and validation failures. **Retry PR preparation**
+reuses saved content without calling the model again. Existing PRs are reconciled
+by a stable branch, including after interrupted pushes. Once a PR exists, Ship
+leaves it alone for editorial review, even if you regenerate the source meeting.
+Revisions whose original article changed on the target branch stop for review
+instead of overwriting newer work. Merging the PR publishes its articles.
+
+`ship blog-prs` backfills completed meetings once; `ship blog-prs --watch` runs the
+worker independently, and `ship blog-prs --retry` retries failed preparation.
+The worker needs authenticated GitHub access, Git, and pnpm. In this hosted coding
+environment it uses the provided verified commit/PR integration; on your computer
+it uses Git and the GitHub CLI (`gh auth login`). Only one worker prepares PRs at a
+time. Local progress is stored in the ignored `.shippost-blog-prs.json` file.
+
+Generation selections and the active target are saved atomically in
+`.shippost-generation-queue.json`. Starting `ship ui` automatically resumes that
+queue, checking saved completion state before each target. If a worker survived
+the previous UI process, recovery waits for it before deciding whether to retry.
+Provider failures remain available for explicit retry through Generate.
+
+Recovery is at the meeting/target boundary: an interrupted target may repeat
+model calls whose results were not saved. Completed targets are skipped. This
+recovers app restarts; the UI still needs to be started after the machine boots.

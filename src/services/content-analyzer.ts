@@ -21,7 +21,7 @@ ${transcript}
 Provide your analysis as JSON:`;
 
       // Call LLM
-      const response = await this.llm.generate(prompt);
+      const response = await this.llm.generate(prompt, 'content-analysis');
 
       // Parse response
       const analysis = this.parseAnalysis(response);

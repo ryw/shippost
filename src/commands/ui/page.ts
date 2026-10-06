@@ -114,6 +114,7 @@ export const PAGE = `<!doctype html>
   @media (max-width: 800px) { .app-nav { padding: 16px; } .generate-layout { grid-template-columns: 1fr; } .generate-sidebar { position: static; } }
   .queue-counts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px; }
   .queue-counts strong { display: block; font-size: 24px; font-weight: 500; font-variant-numeric: tabular-nums; }
+  #genSubsteps, .queue-item.active .queue-title, .queue-counts .active strong, .queue-counts .active span { color: #22c55e; }
   .queue-counts span { color: var(--muted); font-size: 12px; }
 </style>
 </head>
@@ -139,7 +140,7 @@ export const PAGE = `<!doctype html>
   </section>
   <section class="view" id="view-review">
     <div class="toolbar">
-      <button class="ghost" id="stageApproved">Stage next approved</button>
+      <button class="ghost" id="stageApproved">Retry send</button>
       <span class="dim" id="approvedNote" style="color:var(--muted);font-size:13px"></span>
     </div>
     <div class="card" id="card">
@@ -187,11 +188,14 @@ export const PAGE = `<!doctype html>
     </div>
     <aside class="generate-sidebar">
       <section class="card queue-panel">
-        <div class="panel-heading"><h2>Processing</h2><span id="queueCount">Waiting</span></div>
+        <div class="panel-heading"><h2>Processing</h2><span id="queueCount">Remaining</span></div>
         <div id="queueByType" class="queue-counts"></div>
+        <p id="genSubsteps" class="quiet" role="status" style="min-height:36px;margin:12px 0"></p>
         <div id="queueItems"><p class="quiet">Queue empty</p></div>
         <div id="genStatus" style="display:none"><p id="genStatusText" class="quiet" role="status"></p></div>
       </section>
+      <section class="card"><details id="generationMetrics"><summary>Generation diagnostics</summary><p id="metricsActive" class="quiet"></p><div id="metricsBody" style="overflow-x:auto"></div></details></section>
+      <section class="card"><h2>Website PRs</h2><div id="blogPrs" class="quiet">No open website PRs</div></section>
     </aside></div>
   </section>
 
@@ -312,8 +316,9 @@ function initReview() {
 
 function refreshApproved() {
   api('GET', '/api/approved-posts').then((d) => {
-    $('approvedNote').textContent = d.posts.length ? d.posts.length + ' approved, not staged' : 'No approved posts waiting';
+    $('approvedNote').textContent = d.posts.length ? d.posts.length + ' waiting to send' : '';
     $('stageApproved').disabled = d.posts.length === 0;
+    $('stageApproved').hidden = d.posts.length === 0;
   }).catch(() => {});
 }
 
@@ -354,9 +359,9 @@ async function decide(action) {
   if (!p) return;
   busy = true;
   try {
-    await api('POST', '/api/decision', { id: p.id, action, content: $('content').value });
+    const result = await api('POST', '/api/decision', { id: p.id, action, content: $('content').value });
     localStorage.removeItem('draft:' + p.id);
-    toast(action === 'approve' ? 'Approved for staging' : 'Rejected');
+    toast(action === 'approve' ? (result.staged ? 'Sent to Typefully as a draft' : '⚠️ ' + result.error) : 'Rejected');
     queue.splice(idx, 1);
     showPost();
     refreshApproved();
@@ -506,7 +511,66 @@ async function refreshTranscripts() {
   showTranscript();
 }
 
+const timingLabels = { 'social-plan':'Planning', 'social-draft':'Drafting', 'social-evaluation':'Evaluation', 'blog-draft':'Essays', 'blog-cover':'Covers', 'revision-discovery':'Essay discovery', 'revision-plan':'Revision selection', 'article-revision':'Rewriting' };
+const seconds = n => n == null ? '—' : (n / 1000).toFixed(1) + 's';
+const tokens = n => n == null ? '—' : n.toLocaleString();
+async function refreshGenerationMetrics() {
+  try {
+    const d = await api('GET', '/api/generate/metrics');
+    const active = d.active.map(r => (timingLabels[r.purpose] || r.purpose) + ' · ' + seconds(r.elapsedMs) + (r.status === 'interrupted' ? ' · interrupted' : ' · running')).join(' / ');
+    if ($('metricsActive').textContent !== active) $('metricsActive').textContent = active;
+    const completedRuns = d.runs.filter(r => r.outcome !== 'running');
+    const key = JSON.stringify([d.sampleSize, d.purposes, d.recent, completedRuns]);
+    if (refreshGenerationMetrics.key === key) return;
+    refreshGenerationMetrics.key = key;
+    const body = $('metricsBody'); body.replaceChildren();
+    const note = document.createElement('p'); note.className = 'quiet'; note.textContent = 'Last ' + d.sampleSize + ' calls · tokens are provider-reported; — means unavailable.'; body.append(note);
+    const table = document.createElement('table'); table.style.cssText = 'width:100%;font-size:12px;text-align:left;border-spacing:8px';
+    const head = document.createElement('tr');
+    for (const name of ['Step','Calls','Median','p95','In / out']) { const th = document.createElement('th'); th.textContent = name; head.append(th); }
+    table.append(head);
+    for (const r of d.purposes) {
+      const row = document.createElement('tr'); row.title = r.provider + ' / ' + r.model;
+      for (const value of [timingLabels[r.purpose] || r.purpose, r.calls, seconds(r.medianMs), seconds(r.p95Ms), tokens(r.inputTokens) + ' / ' + tokens(r.outputTokens)]) { const td = document.createElement('td'); td.textContent = value; row.append(td); }
+      table.append(row);
+      const detail = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 5; td.className = 'quiet';
+      td.textContent = tokens(r.cachedInputTokens) + ' cached · ' + tokens(r.reasoningTokens) + ' reasoning · ' + r.failures + ' failed · ' + r.repeatedPrompts + ' repeated · usage ' + r.usageCalls + '/' + r.calls;
+      detail.append(td); table.append(detail);
+    }
+    body.append(table);
+    const help = document.createElement('p'); help.className = 'quiet'; help.textContent = 'Cached tokens are part of input; reasoning is part of output. Repeated means identical prompts, not necessarily retries.'; body.append(help);
+    for (const r of completedRuns.slice(0,3)) { const p = document.createElement('p'); p.className = 'quiet'; p.textContent = r.target + ' · ' + r.outcome + ' · ' + seconds(r.elapsedMs) + ' total · ' + seconds(r.modelMs) + ' model · ' + seconds(r.outsideModelMs) + ' outside model'; p.title = r.source; body.append(p); }
+    if (d.recent.length) { const r=d.recent[0]; const p=document.createElement('p'); p.className='quiet'; p.textContent='Latest: ' + (timingLabels[r.purpose] || r.purpose) + ' · auth ' + seconds(r.authMs) + ' · response headers ' + seconds(r.responseHeadersMs) + ' · body ' + seconds(r.bodyMs); p.title='Response headers include network and provider processing, not time to first generated token.'; body.append(p); }
+  } catch {}
+}
+
+let blogPrTimer;
+async function refreshBlogPrs() {
+  refreshGenerationMetrics();
+  try {
+    const records = await api('GET', '/api/blog-prs');
+    const key = JSON.stringify(records);
+    if (refreshBlogPrs.lastKey !== key) {
+      refreshBlogPrs.lastKey = key;
+      const panel = $('blogPrs'); panel.replaceChildren();
+      for (const record of records.filter(r => r.status !== 'empty')) {
+        const row = document.createElement('p');
+        if (record.url && record.url.startsWith('https://github.com/')) {
+          const link = document.createElement('a'); link.href = record.url; link.target = '_blank'; link.rel = 'noopener'; link.textContent = 'Review PR #' + record.url.split('/').pop(); row.append(link);
+        } else {
+          row.textContent = record.status === 'failed' ? 'Needs attention' : 'Preparing PR…';
+          if (record.error) { const details = document.createElement('details'); const summary = document.createElement('summary'); summary.textContent = 'Details'; const message = document.createElement('pre'); message.style.whiteSpace = 'pre-wrap'; message.textContent = record.error; details.append(summary, message); row.append(details); }
+        }
+        panel.append(row);
+      }
+      if (!panel.childElementCount) panel.textContent = 'No open website PRs';
+      if (records.some(r => r.status === 'failed')) { const retry = document.createElement('button'); retry.textContent = 'Retry PR preparation'; retry.onclick = () => api('POST', '/api/blog-prs/retry', {}).then(refreshBlogPrs).catch(e => toast(e.message)); panel.append(retry); }
+    }
+  } catch {}
+}
 function initGenerate() {
+  refreshBlogPrs();
+  if (!blogPrTimer) blogPrTimer = setInterval(refreshBlogPrs, 5000);
   refreshTranscripts().catch((e) => toast('⚠️ ' + e.message));
   $('genRange').onchange = () => {
     gqueue = [];
@@ -618,6 +682,10 @@ function skipTranscript() {
 }
 
 function renderProcessing(s) {
+  const progress = s.running && s.active ? s.progress : null;
+  const stepLabels = { 'Drafting social posts': 'Drafting post', 'Evaluating social posts': 'Evaluating post', 'Social posts': 'Processing post', 'Preparing social posts': 'Preparing posts', 'Choosing post strategies': 'Choosing strategies', 'Drafting essays': 'Drafting essay', 'Preparing drafts and covers': 'Preparing draft', 'Checking articles': 'Checking article' };
+  const stepText = progress ? (stepLabels[progress.label] || progress.label) + ' ' + progress.current + '/' + progress.total : (s.running && s.active ? 'Preparing…' : '');
+  if ($('genSubsteps').textContent !== stepText) $('genSubsteps').textContent = stepText;
   const key = JSON.stringify([s.active, s.activeTarget, s.queue, s.queued, s.running, s.waitingByType]);
   if (renderProcessing.lastKey === key) return;
   renderProcessing.lastKey = key;
@@ -633,16 +701,18 @@ function renderProcessing(s) {
   $('queueByType').replaceChildren();
   for (const [type, label] of Object.entries(labels)) {
     const count = document.createElement('div');
-    const number = document.createElement('strong'); number.textContent = counts ? String(counts[type] || 0) : '—';
+    const active = !!(s.running && s.active && s.activeTarget === type);
+    count.className = active ? 'active' : '';
+    count.title = active ? 'Includes the job in progress' : 'Jobs remaining';
+    const number = document.createElement('strong'); number.textContent = counts ? String((counts[type] || 0) + (active ? 1 : 0)) : '—';
     const name = document.createElement('span'); name.textContent = label;
     count.append(number, name); $('queueByType').append(count);
   }
   $('queueItems').replaceChildren();
   for (const [file, item] of items) {
-    const row = document.createElement('div'); row.className = 'queue-item';
+    const row = document.createElement('div'); row.className = 'queue-item' + (item.active ? ' active' : '');
     const title = document.createElement('div'); title.className = 'queue-title'; title.textContent = renderProcessing.titles.get(file) || 'Meeting';
-    const state = document.createElement('small'); state.textContent = (item.active ? 'Processing' : 'Waiting') + (item.targets.length ? ' · ' + [...new Set(item.targets)].join(', ') : '');
-    row.append(title, state); $('queueItems').append(row);
+    row.append(title); $('queueItems').append(row);
     if (renderProcessing.titles.has(file)) continue;
     api('GET', '/api/transcripts/content?name=' + encodeURIComponent(file)).then(r => {
       const heading = r.content.match(/^# (.+)/);
@@ -661,18 +731,16 @@ function watchGenerate() {
       const s = await api('GET', '/api/generate/status');
       renderProcessing(s);
       if (s.running) {
-        if ($('genStatus').style.display !== 'flex') $('genStatus').style.display = 'flex';
-        const message = s.lastLine.trim();
-        if ($('genStatusText').textContent !== message) $('genStatusText').textContent = message;
+        if ($('genStatus').style.display !== 'none') $('genStatus').style.display = 'none';
         setTimeout(tick, 2000);
       } else {
         gpolling = false;
-        if ($('genStatus').style.display !== 'none') {
-          const message = s.error ? '⚠️ ' + s.error : 'Complete';
-          if ($('genStatusText').textContent !== message) $('genStatusText').textContent = message;
-          tabInits.review = false;
-          refreshTranscripts().catch(() => {});
-        }
+        const display = s.error ? 'flex' : 'none';
+        if ($('genStatus').style.display !== display) $('genStatus').style.display = display;
+        const message = s.error ? '⚠️ ' + s.error : '';
+        if ($('genStatusText').textContent !== message) $('genStatusText').textContent = message;
+        tabInits.review = false;
+        refreshTranscripts().catch(() => {});
       }
     } catch { gpolling = false; }
   };
@@ -946,6 +1014,17 @@ function renderSettings(data) {
       help.textContent = 'Use a key with Personal notes access. Save settings, then open Generate → Sync Granola to import notes from the past 30 days.';
       label.append(help);
     }
+    if (secret.key === 'TYPEFULLY_API_KEY' && secret.source !== 'environment') {
+      const saveKey = document.createElement('button'); saveKey.type = 'button'; saveKey.textContent = 'Save Typefully key';
+      saveKey.onclick = async () => {
+        saveKey.disabled = true;
+        try {
+          renderSettings(await api('POST', '/api/typefully/key', { key: $('secret-TYPEFULLY_API_KEY').value }));
+          $('settingsStatus').textContent = 'Typefully key saved. Return to Review to retry sending.';
+        } catch (error) { $('settingsStatus').textContent = error.message; saveKey.disabled = false; }
+      };
+      label.append(saveKey);
+    }
     if (secret.configured && secret.source !== 'environment') {
       const clear = document.createElement('label'); clear.className = 'settings-field check';
       const check = document.createElement('input'); check.type = 'checkbox'; check.id = 'clear-' + secret.key;
@@ -953,8 +1032,27 @@ function renderSettings(data) {
     }
   }
   const grokHelp = document.createElement('p');
-  grokHelp.textContent = 'Uses Grok Build with your Grok account. Sign in on this computer, then test the connection.';
-  group('Grok').append(grokHelp);
+  grokHelp.textContent = settingsData.grokConnected ? 'Subscription connected' : 'Use your Grok subscription.';
+  const grokConnect = document.createElement('button'); grokConnect.type = 'button';
+  grokConnect.textContent = settingsData.grokConnected ? 'Reconnect Grok' : 'Connect Grok';
+  grokConnect.onclick = async () => {
+    grokConnect.disabled = true;
+    try {
+      const login = await api('POST', '/api/grok/connect', {});
+      const link = document.createElement('a'); link.href = login.url; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = 'Open Grok sign-in';
+      grokHelp.replaceChildren(link, document.createTextNode(' · Code: ' + login.code));
+      const poll = async () => {
+        try {
+          const result = await api('POST', '/api/grok/poll', {});
+          if (result.status === 'pending') { setTimeout(poll, 5000); return; }
+          grokHelp.textContent = result.status === 'connected' ? 'Subscription connected' : 'Connect again to finish sign-in.';
+          grokConnect.textContent = 'Reconnect Grok'; grokConnect.disabled = false;
+        } catch (error) { grokHelp.textContent = error.message; grokConnect.disabled = false; }
+      };
+      setTimeout(poll, 5000);
+    } catch (error) { grokHelp.textContent = error.message; grokConnect.disabled = false; }
+  };
+  group('Grok').append(grokHelp, grokConnect);
   settingsProvider();
 }
 function setSettingsBusy(busy) {

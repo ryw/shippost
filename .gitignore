@@ -44,3 +44,5 @@ coverage/
 .hippo/
 
 .shippost-revisions/
+
+.shippost-blog-prs.lock/

@@ -151,21 +151,27 @@ test('review requires approval before staging and handles retries and concurrent
     assert.equal((await api('transcripts')).body.transcripts.length, 0);
     assert.equal((await api('stage-approved', {})).status, 404);
     assert.equal((await api('decision', { id: 'one', action: 'stage' })).status, 400);
-    assert.equal((await api('decision', { id: 'one', action: 'approve', content: 'edited' })).status, 200);
-    assert.equal(readPosts()[0].metadata.typefullyDraftId, undefined);
-    assert.equal((await api('approved-posts')).body.posts[0].content, 'edited');
+    const results = await Promise.all([
+      api('decision', { id: 'one', action: 'approve', content: 'edited' }),
+      api('decision', { id: 'one', action: 'approve', content: 'duplicate' }),
+      api('stage-approved', {})
+    ]);
+    assert.deepEqual(results.map(r => r.status).sort(), [200, 409, 409]);
+    assert.equal(results[0].body.staged, true);
+    assert.equal(results[0].body.post.content, 'edited');
+    assert.equal(readPosts()[0].status, 'staged');
+    assert.equal(readPosts()[0].content, 'edited');
+    assert.equal(readPosts()[0].metadata.typefullyDraftId, '1');
+    assert.equal((await api('approved-posts')).body.posts.length, 0);
     assert.deepEqual((await api('posts')).body.posts.map(p => p.id).sort(), ['fail', 'two']);
     assert.equal((await api('decision', { id: 'one', action: 'approve' })).status, 409);
-    const results = await Promise.all([api('stage-approved', {}), api('stage-approved', {})]);
-    assert.deepEqual(results.map(r => r.status).sort(), [200, 409]);
-    assert.equal(readPosts()[0].status, 'staged');
-    assert.equal(readPosts()[0].metadata.typefullyDraftId, '1');
-    assert.equal((await api('decision', { id: 'one', action: 'approve' })).status, 409);
     assert.equal((await api('decision', { id: 'two', action: 'reject' })).status, 200);
-    assert.equal((await api('decision', { id: 'fail', action: 'approve' })).status, 200);
-    assert.equal((await api('stage-approved', {})).status, 500);
+    const failed = await api('decision', { id: 'fail', action: 'approve' });
+    assert.equal(failed.status, 200);
+    assert.equal(failed.body.staged, false);
     assert.equal(readPosts()[2].status, 'approved');
-    assert.equal((await api('stage-approved', {})).status, 500); // lock released after failure
+    assert.equal((await api('stage-approved', {})).status, 502);
+    assert.equal((await api('stage-approved', {})).status, 502); // lock released after failure
   } finally {
     child.kill();
     await once(child, 'exit');

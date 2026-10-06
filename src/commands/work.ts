@@ -1,8 +1,10 @@
-import { readdirSync, readFileSync, statSync, existsSync, mkdirSync, writeFileSync, realpathSync } from 'fs';
+import { beginGenerationRun } from '../services/generation-metrics.js';
+import { revisionCatalog, discoverRevisionCandidates } from '../services/revision-candidates.js';
+import { readdirSync, readFileSync, statSync, existsSync, mkdirSync, writeFileSync, renameSync, realpathSync } from 'fs';
 import { join, relative, basename } from 'path';
 import { FileSystemService } from '../services/file-system.js';
 import { createLLMService } from '../services/llm-factory.js';
-import { ContentAnalyzer } from '../services/content-analyzer.js';
+import { planSocialPosts, textOnlyStrategies, renderPrompt, type SocialAssignment } from '../services/social-plan.js';
 import { StrategySelector } from '../services/strategy-selector.js';
 import { logger } from '../utils/logger.js';
 import { readlineSync } from '../utils/readline.js';
@@ -144,30 +146,6 @@ function findInputFiles(inputDir: string): string[] {
   }
 }
 
-function buildStrategyPrompt(
-  systemPrompt: string,
-  styleGuide: string,
-  workInstructions: string,
-  strategyPrompt: string,
-  transcript: string
-): string {
-  return `${systemPrompt}
-
-STYLE GUIDE:
-${styleGuide}
-
-INSTRUCTIONS:
-${workInstructions}
-
-CONTENT STRATEGY FOR THIS POST:
-${strategyPrompt}
-
-TRANSCRIPT TO PROCESS:
-${transcript}
-
-Generate a SINGLE post following the strategy above.`;
-}
-
 interface BlogGenerationResult {
   title: string;
   slug: string;
@@ -292,103 +270,13 @@ function isBlogResultCandidate(value: unknown): boolean {
 async function generateBlogDrafts(
   llm: LLMService,
   transcript: string,
-  systemPrompt: string,
   styleGuide: string,
-  publishedPosts: PublishedPostRef[] = []
+  publishedPosts: PublishedPostRef[],
+  template: string
 ): Promise<BlogGenerationResult[]> {
-  const publishedSection = publishedPosts.length > 0
-    ? `EXISTING PUBLISHED ESSAYS ON THIS BLOG (use these for cross-linking):
-${publishedPosts.map((p) => `- "${p.title}" — /${p.slug}`).join('\n')}
+  const prompt = renderPrompt(template, { style: styleGuide, transcript, publishedPosts: publishedPosts.map(p => JSON.stringify({ title: p.title, slug: p.slug })).join('\n') });
 
-CROSS-LINK RULE (HARD REQUIREMENT):
-Each essay's body MUST contain at least one inline markdown link to a relevant existing essay from the list above. Format: [anchor text](/slug). The blog is fully circular — every new essay points to at least one neighbor.
-- Choose an essay whose argument is genuinely related, not a random one.
-- Anchor text should read naturally inside the sentence, not "click here" or just the title.
-- Only link to slugs that appear in the list above. Do not invent slugs.
-- Two cross-links are fine when they fit; one is the floor.
-
-`
-    : '';
-
-  const prompt = `${systemPrompt}
-
-STYLE GUIDE:
-${styleGuide}
-
-${publishedSection}INSTRUCTIONS:
-Identify the distinct atomic arguments in this transcript and generate ONE short blog post per argument. Generate between 1 and 3 posts.
-
-How many to generate:
-- Default to 1. Most transcripts contain one strong idea — write that single post and stop.
-- Generate 2 only if the transcript contains two clearly separable, non-overlapping arguments that each deserve their own atomic essay.
-- Generate 3 only if there are three genuinely distinct arguments. Do NOT pad — if the third argument is weak or overlaps the others, drop it.
-- Never split a single argument into multiple posts. Never produce variations of the same point.
-
-Each post must stand alone — readable without the others, no cross-references like "as I argued in another post".
-
-Target audience: executive leadership at startups and knowledge-work organizations
-Topics: AI agents as software, enterprise AI operationalization, agent mesh/fabric
-Voice: business visionary, grounded in building experience
-
-SHAPE OF EACH POST (this is the most important constraint):
-- 250-450 words in the body. Hard cap at 500.
-- ONE argument, ONE claim. Pick the strongest point and write JUST that.
-- 3-5 short paragraphs. NO ## section headers. The post is itself one section.
-- Open with the claim or a sharp hook. Close with a forward-looking line or a "what to do" pivot.
-- Cut everything that does not directly support the single argument.
-
-HARD BANS (site lint rejects violations, so these are non-negotiable):
-- NO em dashes (—) anywhere: not in the body, title, description, takeaways, or FAQ. Use a comma, colon, or period, or restructure the sentence.
-- NO stock AI phrasings. Never write "the thing nobody says out loud" (or any nobody/no one ... out loud variant), never "saying the quiet part out loud". If a phrase reads like a viral-post template, cut it.
-- Follow the Confidentiality and Sensitivity Guardrails in the style guide exactly: no identifiable customers, prospects, or live deals; no weak internal traction or metrics admissions; no internal pricing or services-playbook numbers; no other companies' private info from conversations; no AI-leads-to-layoffs framing; no condescension toward buyers; team members are spoken of positively or left out.
-
-Output ONLY valid JSON (no markdown fences, no commentary) with this exact structure:
-{
-  "essays": [
-    {
-      "title": "Post Title Here",
-      "slug": "short-slug-here",
-      "description": "One-sentence summary for SEO/social cards (80-200 chars). Required range — too short fails validation.",
-      "tags": ["ai", "software-engineering"],
-      "takeaways": ["Key insight 1", "Key insight 2", "Key insight 3"],
-      "faq": [
-        {"question": "...", "answer": "..."},
-        {"question": "...", "answer": "..."}
-      ],
-      "sources": [
-        {"id": "short-kebab-id", "title": "Source Title", "url": "https://..."},
-        {"id": "short-kebab-id", "title": "Source Title", "url": "https://..."}
-      ],
-      "motif": "one of: gap | blocks | flow | layers | mesh | harness | fragments | ascend | pipeline | horizon",
-      "body": "Full markdown body here (use \\n for newlines). 250-450 words, no ## headers, single argument."
-    }
-  ]
-}
-
-The "essays" array MUST contain 1, 2, or 3 entries. Never 0, never more than 3.
-
-Rules for slug: 2-5 words, lowercase, hyphenated (e.g. "agents-are-software", "demo-vs-deployment"). Each essay's slug must be different from the others.
-Rules for tags: pick 2-4 from [ai, software-engineering, tembo, startups, agents, enterprise].
-Rules for description: 80-200 characters. Strict — under 80 or over 200 fails site validation.
-Rules for takeaways: exactly 3, one sentence each. NEVER use a bare colon mid-string in a takeaway (it breaks YAML parsing). Use a dash or rephrase.
-Rules for faq: exactly 2 entries, question and answer.
-Rules for sources: exactly 2 real, verifiable external sources. Use actual URLs that exist (anthropic.com, github.blog, palantir.com, stratechery.com, a16z.com, tembo.io, martinfowler.com — or other URLs you are certain are real). Each id is a short kebab-case identifier.
-Rules for motif: pick the geometric cover that best fits the post's core metaphor:
-  - gap: bottleneck, chasm, demo-vs-deployment, missing layer
-  - blocks: knowledge work as software, code, generation, transformation
-  - flow: workflow, scoped agents, sequence, process
-  - layers: context, depth, layered systems, organizational layers
-  - mesh: distributed, atomic units, decomposition, network
-  - harness: interface, framework, container, governance, scaffold
-  - fragments: breakage, fragmentation, decay, homegrown failure
-  - ascend: growth, scaling, platform expansion, wedge-to-platform
-  - pipeline: production, deployment, throughput, factory
-  - horizon: long-term, patience, time, future, marathons
-
-TRANSCRIPT TO PROCESS:
-${transcript}`;
-
-  const response = await llm.generate(prompt);
+  const response = await llm.generate(prompt, 'blog-draft');
 
   try {
     const parsed = parseJsonFromResponse(response, isBlogJsonResponse, 'any');
@@ -541,51 +429,63 @@ ${result.body}`;
   return filePath;
 }
 
-function findBlogPosts(
-  dirs: string[],
-  limitPerDir: number = 5
-): Array<{ name: string; path: string; mtime: Date }> {
-  // Take top N per directory rather than across the combined set, otherwise
-  // a directory with many recently-touched files (drafts) crowds out files
-  // from other directories (published posts) entirely.
-  const result: Array<{ name: string; path: string; mtime: Date }> = [];
-
-  for (const dir of dirs) {
-    if (!existsSync(dir)) continue;
-    try {
-      const dirFiles: Array<{ name: string; path: string; mtime: Date }> = [];
-      for (const file of readdirSync(dir)) {
-        if (!file.endsWith('.md') && !file.endsWith('.mdx')) continue;
-        const filePath = join(dir, file);
-        dirFiles.push({ name: file, path: filePath, mtime: statSync(filePath).mtime });
-      }
-      dirFiles.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
-      result.push(...dirFiles.slice(0, limitPerDir));
-    } catch {
-      // skip unreadable dirs
-    }
-  }
-
-  return result;
+async function proposeRelatedBlogRevisions(
+  llm: LLMService, transcript: string, contentDirs: string[], revisionTemplate: string, sourceFile: string
+): Promise<Array<{ path: string; updated: boolean }>> {
+  const dir = join(process.cwd(), '.shippost-revisions');
+  mkdirSync(dir, { recursive: true });
+  const marker = join(dir, createHash('sha256').update(sourceFile).digest('hex') + '.run.json');
+  const record = (status: string) => {
+    const temporary = marker + '.' + process.pid + '.tmp';
+    writeFileSync(temporary, JSON.stringify({ sourceFile, status, updatedAt: new Date().toISOString() }));
+    renameSync(temporary, marker);
+  };
+  record('running');
+  try {
+    const results = await runRelatedBlogRevisions(llm, transcript, contentDirs, revisionTemplate, sourceFile);
+    record('completed');
+    return results;
+  } catch (error) { record('failed'); throw error; }
 }
 
-async function proposeRelatedBlogRevisions(
+async function runRelatedBlogRevisions(
   llm: LLMService,
   transcript: string,
   contentDirs: string[],
   revisionTemplate: string,
   sourceFile: string
 ): Promise<Array<{ path: string; updated: boolean }>> {
-  const files = findBlogPosts(contentDirs);
+  const fs = new FileSystemService(process.cwd());
+  const catalog = revisionCatalog(contentDirs[1], contentDirs[0], sourceFile);
+  logger.info(`  Scanning ${catalog.length} published essays for relevant arguments`);
+  logger.info(`  Substep 0/1 · Finding related essays`);
+  const candidates = await discoverRevisionCandidates(llm, catalog, transcript, fs.loadPrompt('revision-discovery.md'));
+  logger.info(`  Reviewing ${candidates.length} candidates from ${catalog.length} published essays`);
+  if (!candidates.length) return [];
+  logger.info(`  Substep 0/${candidates.length} · Selecting related articles`);
+  const planTemplate = new FileSystemService(process.cwd()).loadPrompt('revision-plan.md');
+  const response = await llm.generate(renderPrompt(planTemplate, {
+    transcript, articles: JSON.stringify(candidates.map((file, index) => ({ id: String(index), content: readFileSync(file.path, 'utf8') }))),
+  }), 'revision-plan');
+  const plan = parseJsonFromResponse(response, isRecord, 'object');
+  if (!plan || !Array.isArray(plan.articles)) throw new Error('Invalid revision selection. Retry this target.');
+  const selected = new Set<number>();
+  for (const item of plan.articles) {
+    if (!isRecord(item) || typeof item.id !== 'string' || !/^(0|[1-9]\d*)$/.test(item.id) ||
+      Number(item.id) >= candidates.length || typeof item.reason !== 'string' || !item.reason.trim()) throw new Error('Invalid revision candidate. Retry this target.');
+    selected.add(Number(item.id));
+  }
+  const files = [...selected].map(index => candidates[index]);
   const results: Array<{ path: string; updated: boolean }> = [];
 
-  for (const file of files) {
+  for (const [index, file] of files.entries()) {
+    logger.info(`  Substep ${index + 1}/${files.length} · Checking articles`);
     try {
       const content = readFileSync(file.path, 'utf-8');
 
       const prompt = revisionTemplate.replace(/\{\{(transcript|content)\}\}/g, (_, key) => key === 'transcript' ? transcript : content);
 
-      const response = await llm.generate(prompt);
+      const response = await llm.generate(prompt, 'article-revision');
 
       const trimmed = response.trim();
       if (trimmed === 'SKIP') {
@@ -722,7 +622,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
   // Step 2: Load context
   logger.section('[2/3] Loading context...');
 
-  const systemPrompt = fs.loadPrompt('system.md');
+  const systemPrompt = target === 'social' ? fs.loadPrompt('system.md') : '';
   logger.success('Loaded system prompt');
 
   const styleGuide = fs.loadPrompt('style.md');
@@ -734,17 +634,11 @@ export async function workCommand(options: WorkOptions): Promise<void> {
   const bangerEvalTemplate = target === 'social' ? fs.loadPrompt('banger-eval.md') : '';
   logger.success('Loaded banger evaluation prompt');
 
-  // Load content analysis template (for strategy selection)
-  const analysisTemplate = target === 'social' && fs.fileExists(join(cwd, 'prompts', 'content-analysis.md'))
-    ? fs.loadPrompt('content-analysis.md')
-    : '';
-
   // Load user-defined strategies
   const userStrategies = target === 'social' ? fs.loadStrategies() : [];
   logger.success(`Loaded ${userStrategies.length} content strategies`);
 
   // Initialize strategy services
-  const contentAnalyzer = analysisTemplate ? new ContentAnalyzer(llm, analysisTemplate) : null;
   const strategySelector = new StrategySelector(
     userStrategies,
     config.generation.strategies?.diversityWeight ?? 0.7
@@ -830,11 +724,14 @@ export async function workCommand(options: WorkOptions): Promise<void> {
       }
     }
 
+    const finishMetrics = beginGenerationRun(cwd, relativePath, target);
+    let metricsOutcome = "failed";
     try {
       // Read transcript
       const transcript = readFileSync(filePath, 'utf-8');
 
       if (transcript.trim().length === 0) {
+        metricsOutcome = 'empty';
         logger.info('  Skipped (empty file)');
         continue;
       }
@@ -853,6 +750,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
         if (strategiesEnabled) {
           // Determine which strategies to use
           let selectedStrategies;
+          let assignments: SocialAssignment[] = [];
 
           if (options.strategy) {
             // Manual single strategy selection
@@ -872,26 +770,14 @@ export async function workCommand(options: WorkOptions): Promise<void> {
               continue;
             }
           } else {
-            // Auto-select strategies based on content analysis
-            if (contentAnalyzer && config.generation.strategies?.autoSelect !== false) {
-              if (options.verbose) {
-                logger.info('  Analyzing content...');
-              }
-
-              const analysis = await contentAnalyzer.analyzeTranscript(transcript);
-
-              if (options.verbose) {
-                logger.info(`  Content types: ${analysis.contentTypes.join(', ')}`);
-              }
-
-              selectedStrategies = strategySelector.selectStrategies(
-                analysis,
-                postCount,
-                config.generation.strategies?.preferThreadFriendly || false
-              );
+            const candidates = textOnlyStrategies(userStrategies);
+            if (!candidates.length) throw new Error('No text-only strategies available. Edit strategies.json to add supported strategies.');
+            if (config.generation.strategies?.autoSelect !== false) {
+              logger.info(`  Substep 0/${postCount} · Planning post angles`);
+              assignments = await planSocialPosts(llm, fs.loadPrompt('social-plan.md'), styleGuide, transcript, candidates, postCount, config.generation.strategies);
+              selectedStrategies = assignments.map(assignment => candidates.find(s => s.id === assignment.strategyId)!);
             } else {
-              // No analyzer available, use general-purpose strategies
-              selectedStrategies = strategySelector.getAllStrategies().slice(0, postCount);
+              selectedStrategies = candidates.slice(0, postCount);
             }
           }
 
@@ -909,16 +795,19 @@ export async function workCommand(options: WorkOptions): Promise<void> {
             try {
               // Show which strategy is being processed
               logger.info(`  ${progress} ${strategy.name}...`);
+              logger.info(`  Substep ${i + 1}/${selectedStrategies.length} · Drafting social posts`);
 
-              const strategyPrompt = buildStrategyPrompt(
-                systemPrompt,
-                styleGuide,
-                workInstructions,
-                strategy.prompt,
-                transcript
-              );
+              const assignment = assignments[i];
+              const strategyPrompt = renderPrompt(fs.loadPrompt('social-strategy.md'), {
+                style: styleGuide, transcript,
+                plan: assignments.length ? JSON.stringify(assignments) : '[]',
+                assignment: assignment ? JSON.stringify(assignment) : JSON.stringify({ strategyId: strategy.id }),
+                strategy: strategy.prompt,
+                previousPosts: assignments.length ? '[]' : JSON.stringify(pendingPosts.map(post => post.content)),
+              });
 
-              const response = await llm.generate(strategyPrompt);
+              const response = await llm.generate(strategyPrompt, 'social-draft');
+              if (response.trim() === 'SKIP') { logger.info(`  ${progress} Skipped unsupported angle`); continue; }
 
               // Parse single post from response
               const posts = parsePostsFromResponse(response);
@@ -934,7 +823,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
                 );
 
                 // Set platform
-                post.platform = postData.platform || 'x';
+                post.platform = postData.platform || assignment?.platform || 'x';
 
                 // Add strategy metadata
                 post.metadata.strategy = {
@@ -945,8 +834,9 @@ export async function workCommand(options: WorkOptions): Promise<void> {
 
                 // Evaluate banger potential
                 try {
+                  logger.info(`  Substep ${i + 1}/${selectedStrategies.length} · Evaluating social posts`);
                   const evalPrompt = buildBangerEvalPrompt(bangerEvalTemplate, postData.content);
-                  const evalResponse = await llm.generate(evalPrompt);
+                  const evalResponse = await llm.generate(evalPrompt, 'social-evaluation');
                   const evaluation = parseBangerEval(evalResponse);
 
                   if (evaluation) {
@@ -1008,6 +898,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
         } else {
           // Direct generation using work.md instructions
           logger.info(`  Generating posts...`);
+          logger.info(`  Substep 1/1 · Drafting social posts`);
 
           const prompt = buildPrompt(systemPrompt, styleGuide, workInstructions, transcript);
 
@@ -1015,7 +906,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
             logger.info(`  Prompt length: ${prompt.length} characters`);
           }
 
-          const response = await llm.generate(prompt);
+          const response = await llm.generate(prompt, 'social-draft');
 
           if (options.verbose) {
             logger.info(`  Response length: ${response.length} characters`);
@@ -1033,6 +924,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
 
           // Evaluate and save posts
           for (let i = 0; i < posts.length; i++) {
+            logger.info(`  Substep ${i + 1}/${posts.length} · Evaluating social posts`);
             const postData = posts[i];
             const progress = `[${i + 1}/${posts.length}]`;
 
@@ -1052,7 +944,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
             // Evaluate banger potential
             try {
               const evalPrompt = buildBangerEvalPrompt(bangerEvalTemplate, postData.content);
-              const evalResponse = await llm.generate(evalPrompt);
+              const evalResponse = await llm.generate(evalPrompt, 'social-evaluation');
               const evaluation = parseBangerEval(evalResponse);
 
               if (evaluation) {
@@ -1117,7 +1009,8 @@ export async function workCommand(options: WorkOptions): Promise<void> {
 
         // Generate blog drafts (1-3 atomic essays per transcript)
         logger.info('  Generating blog drafts...');
-        const blogResults = await generateBlogDrafts(llm, transcript, systemPrompt, styleGuide, publishedIndex);
+        logger.info('  Substep 1/1 · Drafting essays');
+        const blogResults = await generateBlogDrafts(llm, transcript, styleGuide, publishedIndex, fs.loadPrompt('blog-draft.md'));
         logger.info(`  LLM identified ${blogResults.length} atomic essay${blogResults.length === 1 ? '' : 's'}`);
 
         // Validate each essay cross-links to at least one published essay
@@ -1133,7 +1026,8 @@ export async function workCommand(options: WorkOptions): Promise<void> {
         // transcript don't overwrite each other.
         const usedSlugs = new Set<string>();
         blogDraftCount = blogResults.length;
-        for (const result of blogResults) {
+        for (const [index, result] of blogResults.entries()) {
+          logger.info(`  Substep ${index + 1}/${blogResults.length} · Preparing drafts and covers`);
           const baseSlug = createSlug(result.slug || result.title) || 'draft';
           let slug = baseSlug;
           let n = 2;
@@ -1177,14 +1071,15 @@ export async function workCommand(options: WorkOptions): Promise<void> {
       remaining--;
 
       // Mark file as processed and save immediately
-      state = fs.markFileProcessed(filePath, postsGenerated, state, target);
+      state = fs.markFileProcessed(filePath, target === 'revisions' ? updatedCount : target === 'blog' ? blogDraftCount : postsGenerated, fs.loadState(), target);
       fs.saveState(state);
 
+      metricsOutcome = 'completed';
       logger.success(`  ✓ Done — ${remaining} transcript${remaining === 1 ? '' : 's'} remaining`);
     } catch (error) {
       logger.error(`  Failed: ${(error as Error).message}`);
       totalErrors++;
-    }
+    } finally { finishMetrics(metricsOutcome); }
   }
 
   // Summary

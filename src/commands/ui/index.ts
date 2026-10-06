@@ -1,3 +1,9 @@
+import { readGenerationMetrics } from '../../services/generation-metrics.js';
+import { loadGenerationQueue, saveGenerationQueue, recoverGenerationQueue, generationWorkerAlive, type GenerationItem } from '../../services/generation-queue.js';
+import { startBlogPrWorker, createBlogPrPanel, processBlogPrs } from '../../services/blog-prs.js';
+import { createReviewActions } from '../../services/review-actions.js';
+import { GrokAuth } from '../../services/grok-auth.js';
+import { generationProgress } from './progress.js';
 import { syncGranolaAPI } from '../../services/granola-api.js';
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { spawn, exec } from 'child_process';
@@ -107,12 +113,16 @@ const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
 
 export async function uiCommand(options: UiOptions): Promise<void> {
   const cwd = process.cwd();
+  startBlogPrWorker(cwd);
+  const blogPrPanel = createBlogPrPanel(cwd);
   const fs = new FileSystemService(cwd);
   let typefully: TypefullyService | null = null;
-  let stagingApproved = false;
+  const review = createReviewActions(fs, () => typefully ||= new TypefullyService(fs.loadConfig().typefully?.socialSetId));
   let rewriteLLM: LLMService | null = null;
   const jobs: Record<string, Job> = {};
-  const genQueue: Array<{ file: string; target: GenerationTarget }> = [];
+  const genQueue: GenerationItem[] = recoverGenerationQueue(loadGenerationQueue(cwd));
+  let activeItem: GenerationItem | null = null;
+  const persistGeneration = () => saveGenerationQueue(cwd, genQueue, activeItem);
   let genActive: string | null = null;
   let genActiveTarget: GenerationTarget | null = null;
 
@@ -211,6 +221,59 @@ export async function uiCommand(options: UiOptions): Promise<void> {
     return true;
   };
 
+  const runGeneration = () => startJob('generate', async (job) => {
+    let item: GenerationItem | undefined;
+    const failures: string[] = [];
+    try {
+      while ((item = genQueue.shift())) {
+        activeItem = item;
+        persistGeneration();
+        const { file: f, target } = item;
+        genActive = f;
+        genActiveTarget = target;
+        job.log.push(`▸ ${target}: ${f}`);
+        while (generationWorkerAlive(item)) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        const meta = loadMeta();
+        if (fs.isFileProcessed(join(cwd, 'input', f), fs.loadState(), target) || meta[f]?.skipped || meta[f]?.skippedTargets?.[target]) {
+          activeItem = null; persistGeneration(); continue;
+        }
+        await new Promise<void>((resolve, reject) => {
+          const child = spawn(process.execPath, [process.argv[1], 'work', '--all', '--files', f, '--target', target], { cwd });
+          activeItem = { file: f, target, pid: child.pid };
+          persistGeneration();
+          let output = '';
+          const onData = (chunk: Buffer) => {
+            output += stripAnsi(chunk.toString());
+            stripAnsi(chunk.toString()).split('\n').forEach((line) => {
+              if (line.trim()) job.log.push(line.trimEnd());
+            });
+          };
+          child.stdout.on('data', onData);
+          child.stderr.on('data', onData);
+          child.on('close', (code) => {
+            if (code === 0) return resolve();
+            const reason = output.split('\n').map(line => line.trim())
+              .find(line => /^✗|^Error:|^error:/i.test(line));
+            reject(new Error(reason?.replace(/^✗\s*/, '') || `Generation stopped (exit ${code}).`));
+          });
+          child.on('error', reject);
+        }).catch((error) => {
+          const message = `${target}: ${f}: ${(error as Error).message}`;
+          failures.push(message);
+          job.log.push(`✗ ${message}`);
+        });
+        activeItem = null;
+        persistGeneration();
+      }
+      if (failures.length) throw new Error(failures.join('; '));
+    } finally {
+      genActive = null;
+      genActiveTarget = null;
+    }
+  });
+
   const xApi = async (): Promise<{ api: XApiService; username: string }> => {
     const config = fs.loadConfig();
     const clientId = config.x?.clientId;
@@ -246,10 +309,26 @@ export async function uiCommand(options: UiOptions): Promise<void> {
           return send(403, JSON.stringify({ error: 'Local same-origin access required' }));
         }
         if (route === 'GET /') return send(200, PAGE.replace('__SHIPPOST_SETTINGS_TOKEN__', settingsToken), 'text/html');
+        if (route === 'POST /api/grok/connect' || route === 'POST /api/grok/poll') {
+          if (req.headers['x-settings-token'] !== settingsToken) return send(403, JSON.stringify({ error: 'Reload the page before connecting Grok' }));
+          const auth = new GrokAuth(cwd);
+          try {
+            return send(200, JSON.stringify(route.endsWith('/connect') ? await auth.start() : await auth.poll()));
+          } catch (error) { return send(400, JSON.stringify({ error: (error as Error).message })); }
+        }
+        if (route === 'POST /api/typefully/key') {
+          if (req.headers['x-settings-token'] !== settingsToken) return send(403, JSON.stringify({ error: 'Reload the page before changing credentials' }));
+          if (review.busy) return send(409, JSON.stringify({ error: 'Wait for the current Typefully send to finish' }));
+          const { key } = await readBody();
+          if (typeof key !== 'string' || !key.trim()) return send(400, JSON.stringify({ error: 'Enter a Typefully API key' }));
+          saveSettings(cwd, { values: {}, secrets: { TYPEFULLY_API_KEY: key } });
+          typefully = null;
+          return send(200, JSON.stringify(getSettings(cwd)));
+        }
         if (route === 'GET /api/settings') return send(200, JSON.stringify(getSettings(cwd)));
         if (route === 'POST /api/settings' || route === 'POST /api/settings/test') {
           if (req.headers['x-settings-token'] !== settingsToken) return send(403, JSON.stringify({ error: 'Reload the page before changing settings' }));
-          if (stagingApproved || Object.values(jobs).some(job => job.running)) return send(409, JSON.stringify({ error: 'Wait for running jobs to finish before changing or testing settings' }));
+          if (review.busy || Object.values(jobs).some(job => job.running)) return send(409, JSON.stringify({ error: 'Wait for running jobs to finish before changing or testing settings' }));
           if (route === 'POST /api/settings/test') {
             try {
               await createLLMService(fs.loadConfig()).ensureAvailable();
@@ -260,6 +339,7 @@ export async function uiCommand(options: UiOptions): Promise<void> {
           }
           try {
             saveSettings(cwd, await readBody());
+          startBlogPrWorker(cwd);
             typefully = null;
             rewriteLLM = null;
             return send(200, JSON.stringify(getSettings(cwd)));
@@ -306,53 +386,9 @@ export async function uiCommand(options: UiOptions): Promise<void> {
           return send(200, JSON.stringify({ posts: queue }));
         }
 
-        if (route === 'POST /api/decision') {
-          const { id, action, content } = await readBody();
-          const post = fs.readPosts().find((p) => p.id === id);
-          if (!post) return send(404, JSON.stringify({ error: 'post not found' }));
-          if (action !== 'approve' && action !== 'reject') {
-            return send(400, JSON.stringify({ error: 'action must be approve or reject' }));
-          }
-          if (post.status !== 'new' && post.status !== 'keep') {
-            return send(409, JSON.stringify({ error: 'post has already been reviewed' }));
-          }
-          const finalContent = typeof content === 'string' && content.trim() ? content : post.content;
-          post.content = finalContent;
-          post.status = action === 'approve' ? 'approved' : 'rejected';
-          fs.updatePost(post.id, () => post);
-          logger.info(`${action === 'approve' ? 'Approved' : 'Rejected'}: ${finalContent.slice(0, 60).replace(/\n/g, ' ')}…`);
-          return send(200, JSON.stringify({ ok: true }));
-        }
-
-        if (route === 'POST /api/stage-approved') {
-          if (stagingApproved) {
-            return send(409, JSON.stringify({ error: 'staging is already in progress' }));
-          }
-          stagingApproved = true;
-          try {
-            const approved = fs.readPosts().filter((p) => p.status === 'approved');
-            const post = approved[0];
-            if (!post) return send(404, JSON.stringify({ error: 'no approved posts to stage' }));
-            if (!typefully) typefully = new TypefullyService(config.typefully?.socialSetId);
-            const draft = await typefully.createDraft(post.content, post.platform || 'x');
-            post.metadata.typefullyDraftId = draft.id;
-            post.status = 'staged';
-            fs.updatePost(post.id, () => post);
-            logger.info(`Staged approved post: ${post.content.slice(0, 60).replace(/\n/g, ' ')}…`);
-            return send(200, JSON.stringify({
-              ok: true,
-              share_url: draft.share_url,
-              remaining: approved.length - 1,
-              post: {
-                id: post.id,
-                content: post.content,
-                platform: post.platform || 'x',
-                sourceFile: post.sourceFile,
-              },
-            }));
-          } finally {
-            stagingApproved = false;
-          }
+        if (route === 'POST /api/decision' || route === 'POST /api/stage-approved') {
+          const result = await review.handle(route, await readBody());
+          return send(result.status, JSON.stringify(result.body));
         }
 
         if (route === 'POST /api/rewrite') {
@@ -446,12 +482,21 @@ export async function uiCommand(options: UiOptions): Promise<void> {
           return send(200, JSON.stringify({ ok: true }));
         }
 
+        if (route === 'GET /api/generate/metrics') return send(200, JSON.stringify(readGenerationMetrics(cwd)));
+        if (route === 'GET /api/blog-prs') return send(200, JSON.stringify(await blogPrPanel()));
+        if (route === 'POST /api/blog-prs/retry') {
+          if (req.headers['x-settings-token'] !== settingsToken) return send(403, JSON.stringify({ error: 'Reload the page before retrying PR preparation' }));
+          void processBlogPrs(cwd, { retry: true }).catch(error => logger.error(error.message));
+          return send(202, JSON.stringify({ ok: true }));
+        }
+
         if (route === 'GET /api/generate/status') {
           const job = jobs['generate'];
           return send(200, JSON.stringify({
             running: job?.running ?? false,
             active: genActive,
             activeTarget: genActiveTarget,
+            progress: job?.running && genActive ? generationProgress(job.log, fs.loadConfig().generation.postsPerTranscript) : null,
             queue: genQueue,
             queued: genQueue.length,
             waitingByType: Object.fromEntries(GENERATION_TARGETS.map(target => [target, genQueue.filter(item => item.target === target).length])),
@@ -514,49 +559,8 @@ export async function uiCommand(options: UiOptions): Promise<void> {
             .filter(t => !meta[file]?.skipped && !meta[file]?.skippedTargets?.[t] &&
               !fs.isFileProcessed(join(cwd, 'input', file), state, t))
             .map(target => ({ file, target }))));
-          startJob('generate', async (job) => {
-            let item: { file: string; target: GenerationTarget } | undefined;
-            const failures: string[] = [];
-            try {
-              while ((item = genQueue.shift())) {
-                const { file: f, target } = item;
-                genActive = f;
-                genActiveTarget = target;
-                job.log.push(`▸ ${target}: ${f}`);
-                await new Promise<void>((resolve, reject) => {
-                  const child = spawn(process.execPath, [process.argv[1], 'work', '--all', '--files', f, '--target', target], { cwd });
-                  let output = '';
-                  const onData = (chunk: Buffer) => {
-                    output += stripAnsi(chunk.toString());
-                    stripAnsi(chunk.toString()).split('\n').forEach((line) => {
-                      if (line.trim()) job.log.push(line.trimEnd());
-                    });
-                  };
-                  child.stdout.on('data', onData);
-                  child.stderr.on('data', onData);
-                  child.on('close', (code) => {
-                    if (code === 0) return resolve();
-                    const reason = output.split('\n').map(line => line.trim())
-                      .find(line => /^✗|^Error:|^error:/i.test(line));
-                    reject(new Error(reason?.replace(/^✗\s*/, '') || `Generation stopped (exit ${code}).`));
-                  });
-                  child.on('error', reject);
-                }).catch((error) => {
-                  const message = `${target}: ${f}: ${(error as Error).message}`;
-                  failures.push(message);
-                  job.log.push(`✗ ${message}`);
-                });
-              }
-              if (failures.length) throw new Error(failures.join('; '));
-            } catch (error) {
-              // Return unstarted work to the selectable queue after a failure.
-              genQueue.length = 0;
-              throw error;
-            } finally {
-              genActive = null;
-              genActiveTarget = null;
-            }
-          });
+          persistGeneration();
+          runGeneration();
           return send(202, JSON.stringify({ queued: genQueue.length }));
         }
 
@@ -867,6 +871,7 @@ export async function uiCommand(options: UiOptions): Promise<void> {
     });
 
     server.listen(port, '127.0.0.1', () => {
+      if (genQueue.length && isShippostProject(cwd)) runGeneration();
       const url = `http://127.0.0.1:${port}`;
       logger.blank();
       logger.success(`ship ui running at ${url}`);

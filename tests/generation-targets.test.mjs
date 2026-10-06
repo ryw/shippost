@@ -29,11 +29,30 @@ async function run(cwd, options = {}, mode = 'social') {
     import { OllamaService } from ${JSON.stringify(llmUrl)};
     OllamaService.prototype.ensureAvailable = async () => {};
     let calls = 0;
-    OllamaService.prototype.generate = async (prompt) => {
+    OllamaService.prototype.generate = async (prompt, purpose) => {
       calls++;
       const mode = ${JSON.stringify(mode)};
+      if (mode === 'planned') {
+        if (prompt.includes('LEGACY THREE POSTS')) throw new Error('conflicting legacy prompt leaked');
+        if (purpose === 'social-plan') return JSON.stringify({posts:[
+          {strategyId:'one',angle:'Narrow scope',evidence:'The scope expanded',platform:'x'},
+          {strategyId:'two',angle:'Review outputs',evidence:'A person reviews changes',platform:'linkedin'}
+        ]});
+        if (purpose === 'social-draft') {
+          if (!prompt.includes('Narrow scope') || !prompt.includes('Review outputs')) throw new Error('missing shared angle plan');
+          if (!prompt.includes('CUSTOM_STYLE')) throw new Error('lost style guide');
+          return prompt.includes('strategy-one') ? '[PLATFORM: x] Narrow scope makes testing practical.' : '[PLATFORM: linkedin] Review outputs before applying changes.';
+        }
+        if (purpose === 'social-evaluation') return '{}';
+        throw new Error('unexpected extra model call');
+      }
+      if (mode === 'skip-revisions') {
+        if (purpose !== 'revision-plan') throw new Error('Unrelated article triggered a rewrite');
+        return JSON.stringify({ articles: [] });
+      }
       if (mode === 'fail') throw new Error('simulated model failure');
       if (mode === 'revisions') {
+        if (purpose === 'revision-plan') return JSON.stringify({ articles: [{ id: '0', reason: 'Correct existing claim' }] });
         if (!prompt.startsWith('REVISE') || prompt.includes('{{')) throw new Error('wrong revision prompt');
         return '---\\ntitle: Proposed article\\n---\\nProposed body.';
       }
@@ -65,7 +84,7 @@ test('default social run leaves articles and assets unchanged; blog and revision
     await run(cwd, { target: 'revisions' }, 'revisions');
     assert.equal(readFileSync(join(cwd, 'src/content/posts/existing.mdx'), 'utf8'), original);
     const proposals = readdirSync(join(cwd, '.shippost-revisions'));
-    assert.equal(proposals.filter(p => p.endsWith('.mdx')).length, 2);
+    assert.equal(proposals.filter(p => p.endsWith('.mdx')).length, 1, 'same-source new draft is excluded from revisions');
     const fs = new FileSystemService(cwd);
     for (const target of ['social', 'blog', 'revisions']) assert.ok(fs.isFileProcessed(join(cwd, 'input/meeting.txt'), fs.loadState(), target));
   } finally { rmSync(cwd, { recursive: true, force: true }); }
@@ -120,4 +139,29 @@ test('negated strategies option uses direct generation even when config enables 
     await run(cwd, { strategies: false });
     assert.equal(JSON.parse(readFileSync(join(cwd, 'posts.jsonl'), 'utf8')).status, 'new');
   } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('auto-selected drafts share one plan and omit conflicting legacy instructions', async () => {
+  const cwd = fixture();
+  try {
+    writeFileSync(join(cwd, '.shippostrc.json'), JSON.stringify({ ...DEFAULT_CONFIG, generation: { postsPerTranscript: 8, strategies: { enabled: true, autoSelect: true } } }));
+    writeFileSync(join(cwd, 'prompts/system.md'), 'LEGACY THREE POSTS');
+    writeFileSync(join(cwd, 'prompts/work.md'), 'LEGACY THREE POSTS');
+    writeFileSync(join(cwd, 'prompts/style.md'), 'CUSTOM_STYLE');
+    writeFileSync(join(cwd, 'strategies.json'), JSON.stringify(['one','two'].map(id=>({id,name:id,prompt:'strategy-'+id,category:'educational',applicability:{worksWithAnyContent:true}}))));
+    await run(cwd, {}, 'planned');
+    const posts = new FileSystemService(cwd).readPosts();
+    assert.equal(posts.length, 2, 'does not pad to eight with redundant variants');
+    assert.deepEqual(posts.map(p=>p.platform), ['x','linkedin']);
+    assert.ok(new FileSystemService(cwd).isFileProcessed(join(cwd,'input/meeting.txt'),new FileSystemService(cwd).loadState(),'social'));
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('one revision selection request skips unrelated articles without individual rewrites', async () => {
+  const cwd = fixture();
+  try {
+    await run(cwd, {target:'revisions'}, 'skip-revisions');
+    assert.equal(readdirSync(join(cwd,'.shippost-revisions')).filter(n => n.endsWith('.mdx')).length, 0);
+    assert.equal(readFileSync(join(cwd,'src/content/posts/existing.mdx'),'utf8'),original);
+  } finally { rmSync(cwd,{recursive:true,force:true}); }
 });

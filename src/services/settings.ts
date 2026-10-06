@@ -1,3 +1,4 @@
+import { GrokAuth } from './grok-auth.js';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync, unlinkSync, lstatSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -20,6 +21,7 @@ export const SETTINGS_FIELDS: Field[] = [
   { key: 'ollama.model', label: 'Model', group: 'Ollama', type: 'text', required: true },
   { key: 'ollama.timeout', label: 'Request timeout (milliseconds)', group: 'Ollama', type: 'number', min: 1000, max: 3600000, integer: true },
   { key: 'grok.model', label: 'Model', group: 'Grok', type: 'text' },
+  { key: 'grok.reasoningEffort', label: 'Reasoning effort', group: 'Grok', type: 'select', options: ['low', 'medium', 'high', 'xhigh'] },
   { key: 'anthropic.model', label: 'Model', group: 'Anthropic', type: 'text', required: true },
   { key: 'anthropic.maxTokens', label: 'Maximum output tokens', group: 'Anthropic', type: 'number', min: 1, max: 200000, integer: true },
   { key: 'generation.postsPerTranscript', label: 'Posts per transcript', group: 'Generation', type: 'number', min: 1, max: 100, integer: true },
@@ -32,6 +34,9 @@ export const SETTINGS_FIELDS: Field[] = [
   { key: 'x.enabled', label: 'Enable X API access', group: 'X', type: 'checkbox' },
   { key: 'x.clientId', label: 'Client ID', group: 'X', type: 'text', env: 'SHIPPOST_X_CLIENT_ID' },
   { key: 'x.apiTier', label: 'API tier', group: 'X', type: 'select', options: ['free', 'basic'], env: 'SHIPPOST_X_API_TIER' },
+  { key: 'blog.pullRequests.enabled', label: 'Open one PR per meeting (new posts + revisions)', group: 'Blog', type: 'checkbox' },
+  { key: 'blog.pullRequests.repository', label: 'GitHub repository', group: 'Blog', type: 'text' },
+  { key: 'blog.pullRequests.baseBranch', label: 'Target branch', group: 'Blog', type: 'text' },
   { key: 'blog.outputDir', label: 'Draft output directory', group: 'Blog', type: 'text' },
   { key: 'blog.imageDir', label: 'Image output directory', group: 'Blog', type: 'text' },
   { key: 'blog.imagePathPrefix', label: 'Public image URL prefix', group: 'Blog', type: 'text' },
@@ -66,9 +71,10 @@ export function getSettings(cwd: string) {
   loadWorkspaceSecrets(cwd);
   const raw = rawConfig(cwd);
   const config = existsSync(join(cwd, '.shippostrc.json')) ? new FileSystemService(cwd).loadConfig() : DEFAULT_CONFIG;
-  const defaults: Record<string, unknown> = { 'grok.model': 'grok-4.7', 'x.enabled': true, 'x.apiTier': 'free', 'typefully.socialSetId': '1', 'blog.outputDir': 'src/content/drafts', 'blog.imageDir': 'public/images/posts', 'blog.imagePathPrefix': '/images/posts' };
+  const defaults: Record<string, unknown> = { 'grok.model': 'grok-4.7', 'grok.reasoningEffort': 'high', 'x.enabled': true, 'x.apiTier': 'free', 'typefully.socialSetId': '1', 'blog.pullRequests.enabled': false, 'blog.pullRequests.repository': 'ryw/rywalker.com', 'blog.pullRequests.baseBranch': 'main', 'blog.outputDir': 'src/content/drafts', 'blog.imageDir': 'public/images/posts', 'blog.imagePathPrefix': '/images/posts' };
   return {
     initialized: isShippostProject(cwd),
+    grokConnected: new GrokAuth(cwd).connected(),
     anthropicModels: ANTHROPIC_MODELS,
     anthropicTemperaturePattern: ANTHROPIC_TEMPERATURE_PATTERN.source,
     fields: SETTINGS_FIELDS.map(field => ({ ...field, value: get(config, field.key) ?? defaults[field.key] ?? '', environment: field.env && process.env[field.env] ? field.env : undefined })),
@@ -139,7 +145,7 @@ export function saveSettings(cwd: string, body: Record<string, unknown>): void {
   }
   const ignorePath = join(cwd, '.gitignore');
   let ignore = existsSync(ignorePath) ? readFileSync(ignorePath, 'utf8') : '';
-  for (const rule of ['input/', '.shippost-grok/', '.shippostrc.json', '.shippost-secrets.json', '.shippost-*.json', '.granola-*.json', '.shippost-revisions/', '.env', '.env.local']) {
+  for (const rule of ['input/', '.shippost-blog-prs.lock/', '.shippost-grok/', '.shippostrc.json', '.shippost-secrets.json', '.shippost-*.json', '.granola-*.json', '.shippost-revisions/', '.env', '.env.local']) {
     if (!ignore.split(/\r?\n/).includes(rule)) ignore += '\n' + rule + '\n';
   }
   atomicWrite(ignorePath, ignore);

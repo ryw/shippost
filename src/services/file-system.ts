@@ -1,5 +1,6 @@
-import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, rmdirSync, statSync } from 'fs';
-import { join } from 'path';
+import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, rmdirSync, statSync, renameSync, unlinkSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
 import type { Post } from '../types/post.js';
 import type { T2pConfig } from '../types/config.js';
@@ -143,9 +144,15 @@ export class FileSystemService {
     }
   }
 
-  loadPrompt(filename: 'style.md' | 'work.md' | 'system.md' | 'analysis.md' | 'banger-eval.md' | 'content-analysis.md' | 'reply.md' | 'blog-revision.md'): string {
+  loadPrompt(filename: 'style.md' | 'work.md' | 'system.md' | 'analysis.md' | 'banger-eval.md' | 'content-analysis.md' | 'reply.md' | 'blog-revision.md' | 'social-plan.md' | 'social-strategy.md' | 'blog-draft.md' | 'blog-cover.md' | 'revision-discovery.md' | 'revision-plan.md'): string {
     const promptPath = join(this.cwd, 'prompts', filename);
 
+    if (!existsSync(promptPath) && ['social-plan.md', 'social-strategy.md', 'blog-draft.md', 'blog-cover.md', 'revision-discovery.md', 'revision-plan.md'].includes(filename)) {
+      mkdirSync(join(this.cwd, 'prompts'), { recursive: true });
+      const template = join(dirname(fileURLToPath(import.meta.url)), '../templates', filename);
+      try { writeFileSync(promptPath, readFileSync(template), { flag: 'wx' }); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+    }
     if (!existsSync(promptPath)) {
       throw new NotInitializedError();
     }
@@ -314,7 +321,11 @@ export class FileSystemService {
     const statePath = join(this.cwd, '.shippost-state.json');
 
     try {
-      writeFileSync(statePath, JSON.stringify(state, null, 2), 'utf-8');
+      const temporary = statePath + '.' + randomUUID() + '.tmp';
+      try {
+        writeFileSync(temporary, JSON.stringify(state, null, 2), { mode: 0o600, flag: 'wx' });
+        renameSync(temporary, statePath);
+      } finally { if (existsSync(temporary)) unlinkSync(temporary); }
     } catch (error) {
       throw new FileSystemError(`Failed to save state: ${(error as Error).message}`);
     }
