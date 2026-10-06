@@ -1,3 +1,4 @@
+import { WorkspaceBackup } from '../dist/services/workspace-backup.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
@@ -44,7 +45,10 @@ test('environment overrides preserve defaults and do not persist to config', () 
   }
 });
 
-test('review requires approval before staging and handles retries and concurrent requests', async () => {
+test('review requires approval before staging and handles retries and concurrent requests', async t => {
+  const originalAssert=WorkspaceBackup.prototype.assertWriter, originalCheckpoint=WorkspaceBackup.prototype.checkpoint;
+  WorkspaceBackup.prototype.assertWriter=function(){}; WorkspaceBackup.prototype.checkpoint=function(){};
+  t.after(()=>{WorkspaceBackup.prototype.assertWriter=originalAssert;WorkspaceBackup.prototype.checkpoint=originalCheckpoint;});
   const dir = workspace();
   writeFileSync(join(dir, '.shippost-unfollow-pending.json'), JSON.stringify({ fixture: { username: 'fixture', queuedAt: new Date().toISOString() } }));
   const postsPath = join(dir, 'posts.jsonl');
@@ -95,6 +99,9 @@ test('review requires approval before staging and handles retries and concurrent
       if (content === 'fail') throw new Error('simulated failure');
       return { id: String(calls), share_url: 'https://example.com/draft' };
     };
+    import { WorkspaceBackup } from ${JSON.stringify(new URL('../dist/services/workspace-backup.js', import.meta.url).href)};
+    WorkspaceBackup.prototype.start=function(){};WorkspaceBackup.prototype.assertWriter=function(){};WorkspaceBackup.prototype.checkpoint=function(){};
+    (await import('node:fs')).writeFileSync('.shippost-backup.json',JSON.stringify({repository:'test/private'}));
     await uiCommand({ port: ${port} });
   `], { cwd: dir, env: { ...process.env, TYPEFULLY_API_KEY: 'test' }, stdio: ['ignore', 'pipe', 'pipe'] });
   try {

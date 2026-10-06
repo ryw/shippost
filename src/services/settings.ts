@@ -1,3 +1,4 @@
+import { assertBackupWriter, checkpointWorkspace } from './workspace-backup.js';
 import { GrokAuth } from './grok-auth.js';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync, unlinkSync, lstatSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
@@ -83,6 +84,7 @@ export function getSettings(cwd: string) {
 }
 
 export function saveSettings(cwd: string, body: Record<string, unknown>): void {
+  assertBackupWriter(cwd);
   const values = body.values;
   const secrets = body.secrets ?? {};
   if (!values || typeof values !== 'object' || Array.isArray(values) || !secrets || typeof secrets !== 'object' || Array.isArray(secrets)) throw new Error('Invalid settings payload');
@@ -152,4 +154,5 @@ export function saveSettings(cwd: string, body: Record<string, unknown>): void {
   atomicWrite(join(cwd, '.shippost-secrets.json'), JSON.stringify(savedSecrets, null, 2) + '\n');
   atomicWrite(join(cwd, '.shippostrc.json'), JSON.stringify(config, null, 2) + '\n');
   loadWorkspaceSecrets(cwd);
+  checkpointWorkspace(cwd);
 }

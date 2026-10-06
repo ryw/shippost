@@ -1,3 +1,4 @@
+import { startWorkspaceBackup, assertBackupWriter, checkpointWorkspace, configureWorkspaceBackup, releaseWorkspaceBackup, backupStatus } from '../../services/workspace-backup.js';
 import { readGenerationMetrics } from '../../services/generation-metrics.js';
 import { loadGenerationQueue, saveGenerationQueue, recoverGenerationQueue, generationWorkerAlive, type GenerationItem } from '../../services/generation-queue.js';
 import { startBlogPrWorker, createBlogPrPanel, processBlogPrs } from '../../services/blog-prs.js';
@@ -113,7 +114,9 @@ const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
 
 export async function uiCommand(options: UiOptions): Promise<void> {
   const cwd = process.cwd();
-  startBlogPrWorker(cwd);
+  let backupReady=true;
+  try { startWorkspaceBackup(cwd); } catch(error) { backupReady=false; logger.error((error as Error).message); }
+  if(backupReady) startBlogPrWorker(cwd);
   const blogPrPanel = createBlogPrPanel(cwd);
   const fs = new FileSystemService(cwd);
   let typefully: TypefullyService | null = null;
@@ -175,6 +178,7 @@ export async function uiCommand(options: UiOptions): Promise<void> {
   const saveMeta = async (meta: TranscriptMeta) => {
     const { writeFileSync } = await import('fs');
     writeFileSync(metaPath, JSON.stringify(meta, null, 2));
+    checkpointWorkspace(cwd);
   };
 
   // One Granola fetch per server run: filename → attendee names (excluding Ry).
@@ -211,21 +215,23 @@ export async function uiCommand(options: UiOptions): Promise<void> {
     return attendeesPromise;
   };
 
+  let pauseGeneration = false;
   const startJob = (name: string, fn: (job: Job) => Promise<void>): boolean => {
     if (jobs[name]?.running) return false;
     const job: Job = { running: true, log: [] };
     jobs[name] = job;
     fn(job)
       .catch((err) => { job.error = (err as Error).message; job.log.push(`✗ ${(err as Error).message}`); })
-      .finally(() => { job.running = false; });
+      .finally(() => { try { checkpointWorkspace(cwd); } catch(error) { job.error=(error as Error).message; } job.running = false; });
     return true;
   };
 
   const runGeneration = () => startJob('generate', async (job) => {
+    assertBackupWriter(cwd);
     let item: GenerationItem | undefined;
     const failures: string[] = [];
     try {
-      while ((item = genQueue.shift())) {
+      while (!pauseGeneration && (item = genQueue.shift())) {
         activeItem = item;
         persistGeneration();
         const { file: f, target } = item;
@@ -308,6 +314,17 @@ export async function uiCommand(options: UiOptions): Promise<void> {
         if (!hosts.includes(req.headers.host || '') || (req.headers.origin && !hosts.some(host => req.headers.origin === `http://${host}`))) {
           return send(403, JSON.stringify({ error: 'Local same-origin access required' }));
         }
+        if (route === 'GET /api/backup') return send(200, JSON.stringify(backupStatus(cwd)));
+        if (route === 'POST /api/backup') {
+          if(req.headers['x-settings-token'] !== settingsToken) return send(403, JSON.stringify({error:'Reload the page before changing backups'}));
+          const body=await readBody();
+          if(body.action==='pause') {pauseGeneration=true;return send(200,JSON.stringify({...backupStatus(cwd),notice:'Queue will pause after this target. Release the VM once processing stops.'}));}
+          if(review.busy || Object.values(jobs).some(j=>j.running)) return send(409,JSON.stringify({error:'Pause the queue and wait for the active target; stop standalone workers before connecting or releasing backups'}));
+          if(body.action==='release') {releaseWorkspaceBackup(cwd);backupReady=false;}
+          else {configureWorkspaceBackup(cwd,String(body.repository || ''));backupReady=false;pauseGeneration=true;}
+          return send(200,JSON.stringify({...backupStatus(cwd),restartRequired:true}));
+        }
+        if(req.method==='POST') { if(!backupReady) return send(409,JSON.stringify({error:'Connect backups and restart the app before processing'})); if(!backupStatus(cwd).repository) return send(409,JSON.stringify({error:'Connect the required private state repository in Settings first'})); assertBackupWriter(cwd); }
         if (route === 'GET /') return send(200, PAGE.replace('__SHIPPOST_SETTINGS_TOKEN__', settingsToken), 'text/html');
         if (route === 'POST /api/grok/connect' || route === 'POST /api/grok/poll') {
           if (req.headers['x-settings-token'] !== settingsToken) return send(403, JSON.stringify({ error: 'Reload the page before connecting Grok' }));
@@ -870,8 +887,10 @@ export async function uiCommand(options: UiOptions): Promise<void> {
       }
     });
 
+    const backupTimer=setInterval(()=>{try{checkpointWorkspace(cwd);}catch(error){logger.error((error as Error).message);}},30000);
+    backupTimer.unref(); server.on('close',()=>clearInterval(backupTimer));
     server.listen(port, '127.0.0.1', () => {
-      if (genQueue.length && isShippostProject(cwd)) runGeneration();
+      if (backupReady && genQueue.length && isShippostProject(cwd)) runGeneration();
       const url = `http://127.0.0.1:${port}`;
       logger.blank();
       logger.success(`ship ui running at ${url}`);

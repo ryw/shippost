@@ -133,6 +133,7 @@ export const PAGE = `<!doctype html>
 
   <section class="view" id="view-settings">
     <div class="settings-intro"><h1>Your workspace</h1><p id="settingsIntro">Choose how you generate and where your drafts go.</p></div>
+    <section class="card"><h2>Workspace backup</h2><p class="quiet">Required: a private GitHub repo initialized with a README. Your website repo works; backups use a separate branch. Restores notes, drafts, reviews, and queue; reconnect credentials separately.</p><label>Private repository <input id="backupRepository" placeholder="owner/website" /></label><button class="ghost" id="backupConnect" type="button">Connect / restore</button><button class="ghost" id="backupPause" type="button">Pause after this target</button><button class="ghost" id="backupRelease" type="button">Checkpoint &amp; release VM</button><p id="backupStatus" role="status"></p></section>
     <form id="settingsForm">
       <div id="settingsFields"></div>
       <div class="settings-actions"><p id="settingsStatus" role="status" aria-live="polite"></p><button type="submit" class="primary" id="settingsSave">Save settings</button><button type="button" class="ghost" id="settingsTest">Test saved LLM connection</button></div>
@@ -1060,6 +1061,13 @@ function setSettingsBusy(busy) {
   $('settingsTest').disabled = busy || !settingsData?.initialized;
 }
 async function initSettings() {
+  const showBackup = d => { $('backupRepository').value=d.repository || d.suggestedRepository; $('backupStatus').textContent=d.notice || d.error || (d.paused?'Writer released. Stop this app before opening another VM.':d.updatedAt?'Last checkpoint: '+new Date(d.updatedAt).toLocaleString():'Not connected.') + (d.restartRequired?' Restart the app to load restored state.':''); };
+  api('GET','/api/backup').then(showBackup).catch(e=>$('backupStatus').textContent=e.message);
+  for (const [id,action] of [['backupConnect','connect'],['backupPause','pause'],['backupRelease','release']]) $(id).onclick=async()=>{
+    if(action==='release' && !confirm('Stop all standalone workers first. Checkpoint this workspace and release it for another VM?'))return;
+    $(id).disabled=true;
+    try{showBackup(await api('POST','/api/backup',{action,repository:$('backupRepository').value.trim()}));}catch(e){$('backupStatus').textContent=e.message;}finally{$(id).disabled=false;}
+  };
   try { renderSettings(await api('GET', '/api/settings')); }
   catch (e) { $('settingsStatus').textContent = e.message; }
   $('settingsForm').onsubmit = async (event) => {

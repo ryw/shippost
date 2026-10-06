@@ -92,7 +92,10 @@ test('UI boots without config; settings writes require same-origin session token
   const ollama = new URL('../dist/services/ollama.js', import.meta.url).href;
   const env = { ...process.env };
   for (const key of ['TYPEFULLY_API_KEY', 'ANTHROPIC_API_KEY', 'TWITTER_CLIENT_SECRET']) delete env[key];
-  const child = spawn(process.execPath, ['--input-type=module', '-e', `import { uiCommand } from ${JSON.stringify(ui)}; import { OllamaService } from ${JSON.stringify(ollama)}; OllamaService.prototype.ensureAvailable = async () => {}; OllamaService.prototype.generate = async function() { return this.getModelName(); }; await uiCommand({ port: ${port} });`], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(process.execPath, ['--input-type=module', '-e', `import { uiCommand } from ${JSON.stringify(ui)}; import { OllamaService } from ${JSON.stringify(ollama)}; OllamaService.prototype.ensureAvailable = async () => {}; OllamaService.prototype.generate = async function() { return this.getModelName(); }; import { WorkspaceBackup } from ${JSON.stringify(new URL('../dist/services/workspace-backup.js', import.meta.url).href)};
+    WorkspaceBackup.prototype.start=function(){};WorkspaceBackup.prototype.assertWriter=function(){};WorkspaceBackup.prototype.checkpoint=function(){};
+    (await import('node:fs')).writeFileSync('.shippost-backup.json',JSON.stringify({repository:'test/private'}));
+    await uiCommand({ port: ${port} });`], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
   try {
     await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('startup timed out')), 10000);

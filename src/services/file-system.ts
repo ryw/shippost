@@ -1,3 +1,4 @@
+import { assertBackupWriter, checkpointWorkspace } from './workspace-backup.js';
 import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, rmdirSync, statSync, renameSync, unlinkSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -78,6 +79,8 @@ export class FileSystemService {
     this.cwd = cwd;
   }
 
+  get workspacePath(): string { return this.cwd; }
+
   loadConfig(): T2pConfig {
     loadWorkspaceSecrets(this.cwd);
     const configPath = join(this.cwd, '.shippostrc.json');
@@ -135,10 +138,12 @@ export class FileSystemService {
   }
 
   saveConfig(config: T2pConfig): void {
+    assertBackupWriter(this.cwd);
     const configPath = join(this.cwd, '.shippostrc.json');
 
     try {
       writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
+      checkpointWorkspace(this.cwd);
     } catch (error) {
       throw new FileSystemError(`Failed to save config: ${(error as Error).message}`);
     }
@@ -191,6 +196,7 @@ export class FileSystemService {
   }
 
   appendPost(post: Post): void {
+    assertBackupWriter(this.cwd);
     const postsPath = join(this.cwd, 'posts.jsonl');
     const lockPath = this.postsLockPath;
 
@@ -198,6 +204,7 @@ export class FileSystemService {
     try {
       const line = JSON.stringify(post) + '\n';
       appendFileSync(postsPath, line, 'utf-8');
+      checkpointWorkspace(this.cwd);
     } catch (error) {
       throw new FileSystemError(`Failed to append post: ${(error as Error).message}`);
     } finally {
@@ -227,6 +234,7 @@ export class FileSystemService {
   }
 
   writePosts(posts: Post[]): void {
+    assertBackupWriter(this.cwd);
     const postsPath = join(this.cwd, 'posts.jsonl');
     const lockPath = this.postsLockPath;
 
@@ -234,6 +242,7 @@ export class FileSystemService {
     try {
       const content = posts.map((post) => JSON.stringify(post)).join('\n') + '\n';
       writeFileSync(postsPath, content, 'utf-8');
+      checkpointWorkspace(this.cwd);
     } catch (error) {
       throw new FileSystemError(`Failed to write posts: ${(error as Error).message}`);
     } finally {
@@ -243,6 +252,7 @@ export class FileSystemService {
 
   /** Atomically update a single post by ID (re-reads file inside lock). */
   updatePost(postId: string, updater: (post: Post) => Post): void {
+    assertBackupWriter(this.cwd);
     const postsPath = join(this.cwd, 'posts.jsonl');
     const lockPath = this.postsLockPath;
 
@@ -259,6 +269,7 @@ export class FileSystemService {
 
       const output = posts.map((post) => JSON.stringify(post)).join('\n') + '\n';
       writeFileSync(postsPath, output, 'utf-8');
+      checkpointWorkspace(this.cwd);
     } catch (error) {
       throw new FileSystemError(`Failed to update post: ${(error as Error).message}`);
     } finally {
@@ -318,6 +329,7 @@ export class FileSystemService {
   }
 
   saveState(state: T2pState): void {
+    assertBackupWriter(this.cwd);
     const statePath = join(this.cwd, '.shippost-state.json');
 
     try {
@@ -325,6 +337,7 @@ export class FileSystemService {
       try {
         writeFileSync(temporary, JSON.stringify(state, null, 2), { mode: 0o600, flag: 'wx' });
         renameSync(temporary, statePath);
+      checkpointWorkspace(this.cwd);
       } finally { if (existsSync(temporary)) unlinkSync(temporary); }
     } catch (error) {
       throw new FileSystemError(`Failed to save state: ${(error as Error).message}`);

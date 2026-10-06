@@ -1,3 +1,4 @@
+import { assertBackupWriter } from './workspace-backup.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { appendFileSync, mkdirSync, writeFileSync, openSync, readSync, closeSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -39,6 +40,7 @@ export function instrumentLLM(service: LLMService, provider: string, cwd = proce
     isAvailable: () => service.isAvailable(), ensureAvailable: () => service.ensureAvailable(),
     getModelName: () => service.getModelName(), getTemperature: () => service.getTemperature(),
     async generate(prompt: string, purpose: LLMPurpose = 'unspecified') {
+      assertBackupWriter(cwd);
       const started = Date.now();
       const record: RecordData = {
         runId: run?.runId, source: run?.source, target: run?.target, pid: process.pid,
@@ -50,6 +52,7 @@ export function instrumentLLM(service: LLMService, provider: string, cwd = proce
       return requestContext.run(record, async () => {
         try {
           const text = await service.generate(prompt, purpose);
+          assertBackupWriter(cwd);
           record.outputCharacters = text.length; record.outcome = 'completed';
           return text;
         } finally {

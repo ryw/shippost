@@ -1,5 +1,7 @@
 # shippost
 
+Workspace processing requires a private GitHub backing repository. The website repository can be used; state is stored on a separate branch. See [workspace backup and VM handoff](docs/workspace-backups.md) for setup, restoration, and credential handling.
+
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js >=18](https://img.shields.io/badge/Node.js-%3E%3D18-green.svg)](https://nodejs.org/)
 [![Version 2026.8.1](https://img.shields.io/badge/version-2026.8.1-orange.svg)](package.json)
