@@ -65,7 +65,7 @@ Rules for tags: pick 2-4 from [ai, software-engineering, tembo, startups, agents
 Rules for description: 80-200 characters. Strict — under 80 or over 200 fails site validation.
 Rules for takeaways: exactly 3, one sentence each. NEVER use a bare colon mid-string in a takeaway (it breaks YAML parsing). Use a dash or rephrase.
 Rules for faq: exactly 2 entries, question and answer.
-Rules for sources: exactly 2 real, verifiable external sources. Use actual URLs that exist (anthropic.com, github.blog, palantir.com, stratechery.com, a16z.com, tembo.io, martinfowler.com — or other URLs you are certain are real). Each id is a short kebab-case identifier.
+Rules for sources: include only real external sources that support specific claims in the essay. There is no source-count quota. Cite every source at the supported claim with <Cite src="source-id" /> and use the matching short kebab-case id in sources. Do not add decorative further reading or invent URLs. Use an empty sources array when the essay needs no external factual support.
 Rules for motif: pick the geometric cover that best fits the post's core metaphor:
   - gap: bottleneck, chasm, demo-vs-deployment, missing layer
   - blocks: knowledge work as software, code, generation, transformation

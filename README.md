@@ -863,3 +863,33 @@ Grok request diagnostics are recorded privately in `.shippost-grok/requests.json
 Automatic social generation makes one shared angle plan before drafting. It excludes strategies requiring visual assets, preserves your style guide, and uses the configured post count as a maximum: it may produce fewer posts when the notes do not support enough distinct ideas. Each draft still receives an independent evaluation. Strategy runs use `social-plan.md` and `social-strategy.md`; `system.md` and `work.md` continue to control legacy generation with `--no-strategies`.
 
 Blog essays use their own JSON-output contract instead of the social system prompt. Revision checks exclude articles with the same source meeting, then make one relevance-selection request before revising selected articles individually. New task prompts are copied into your workspace's `prompts/` directory when first needed; existing customized files are never overwritten. Shared style, source notes, and the angle plan precede the per-post assignment to improve prefix-cache reuse. Reasoning effort is unchanged.
+
+### Website review PRs
+
+In **Settings → Blog**, enable **Open one PR per meeting** and set the GitHub
+repository and target branch. The repository must match the current workspace's
+`origin`. This publisher supports the rywalker.com layout: new drafts in
+`src/content/drafts`, published MDX in `src/content/posts`, SVG covers in
+`public/images/posts`, and the curated homepage in `src/lib/homepage-sections.ts`.
+
+With `ship ui` running, a separate worker waits for both the blog and revisions
+targets to succeed for a meeting. It packages all that meeting's new essays,
+covers, homepage entries, and suggested revisions in **one draft PR**. An empty
+revision selection does not block new essays. A failed generation target does.
+Generation continues while the worker runs lint and the production build in an
+isolated checkout. Existing installed dependencies are copied only when dependency
+manifests match; otherwise the worker requires a frozen dependency installation.
+
+The Generate sidebar shows PR links and validation failures. **Retry PR preparation**
+reuses saved content without calling the model again. Existing PRs are reconciled
+by a stable branch, including after interrupted pushes. Once a PR exists, Ship
+leaves it alone for editorial review, even if you regenerate the source meeting.
+Revisions whose original article changed on the target branch stop for review
+instead of overwriting newer work. Merging the PR publishes its articles.
+
+`ship blog-prs` backfills completed meetings once; `ship blog-prs --watch` runs the
+worker independently, and `ship blog-prs --retry` retries failed preparation.
+The worker needs authenticated GitHub access, Git, and pnpm. In this hosted coding
+environment it uses the provided verified commit/PR integration; on your computer
+it uses Git and the GitHub CLI (`gh auth login`). Only one worker prepares PRs at a
+time. Local progress is stored in the ignored `.shippost-blog-prs.json` file.

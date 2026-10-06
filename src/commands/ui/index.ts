@@ -1,3 +1,4 @@
+import { startBlogPrWorker, readBlogPrStatus, processBlogPrs } from '../../services/blog-prs.js';
 import { createReviewActions } from '../../services/review-actions.js';
 import { GrokAuth } from '../../services/grok-auth.js';
 import { generationProgress } from './progress.js';
@@ -110,6 +111,7 @@ const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
 
 export async function uiCommand(options: UiOptions): Promise<void> {
   const cwd = process.cwd();
+  startBlogPrWorker(cwd);
   const fs = new FileSystemService(cwd);
   let typefully: TypefullyService | null = null;
   const review = createReviewActions(fs, () => typefully ||= new TypefullyService(fs.loadConfig().typefully?.socialSetId));
@@ -279,6 +281,7 @@ export async function uiCommand(options: UiOptions): Promise<void> {
           }
           try {
             saveSettings(cwd, await readBody());
+          startBlogPrWorker(cwd);
             typefully = null;
             rewriteLLM = null;
             return send(200, JSON.stringify(getSettings(cwd)));
@@ -419,6 +422,13 @@ export async function uiCommand(options: UiOptions): Promise<void> {
           meta[key] = { ...meta[key], skippedTargets: { ...meta[key]?.skippedTargets, ...Object.fromEntries(targets.map(t => [t, true])) } };
           await saveMeta(meta);
           return send(200, JSON.stringify({ ok: true }));
+        }
+
+        if (route === 'GET /api/blog-prs') return send(200, JSON.stringify(Object.values(readBlogPrStatus(cwd))));
+        if (route === 'POST /api/blog-prs/retry') {
+          if (req.headers['x-settings-token'] !== settingsToken) return send(403, JSON.stringify({ error: 'Reload the page before retrying PR preparation' }));
+          void processBlogPrs(cwd, { retry: true }).catch(error => logger.error(error.message));
+          return send(202, JSON.stringify({ ok: true }));
         }
 
         if (route === 'GET /api/generate/status') {

@@ -194,6 +194,7 @@ export const PAGE = `<!doctype html>
         <div id="queueItems"><p class="quiet">Queue empty</p></div>
         <div id="genStatus" style="display:none"><p id="genStatusText" class="quiet" role="status"></p></div>
       </section>
+      <section class="card"><h2>Website PRs</h2><div id="blogPrs" class="quiet">Waiting for completed meetings</div></section>
     </aside></div>
   </section>
 
@@ -509,7 +510,32 @@ async function refreshTranscripts() {
   showTranscript();
 }
 
+let blogPrTimer;
+async function refreshBlogPrs() {
+  try {
+    const records = await api('GET', '/api/blog-prs');
+    const key = JSON.stringify(records);
+    if (refreshBlogPrs.lastKey !== key) {
+      refreshBlogPrs.lastKey = key;
+      const panel = $('blogPrs'); panel.replaceChildren();
+      for (const record of records.filter(r => r.status !== 'empty')) {
+        const row = document.createElement('p');
+        if (record.url && record.url.startsWith('https://github.com/')) {
+          const link = document.createElement('a'); link.href = record.url; link.target = '_blank'; link.rel = 'noopener'; link.textContent = 'Review PR #' + record.url.split('/').pop(); row.append(link);
+        } else {
+          row.textContent = record.status === 'failed' ? 'Needs attention' : 'Preparing PR…';
+          if (record.error) { const details = document.createElement('details'); const summary = document.createElement('summary'); summary.textContent = 'Details'; const message = document.createElement('pre'); message.style.whiteSpace = 'pre-wrap'; message.textContent = record.error; details.append(summary, message); row.append(details); }
+        }
+        panel.append(row);
+      }
+      if (!panel.childElementCount) panel.textContent = 'Waiting for completed meetings';
+      if (records.some(r => r.status === 'failed')) { const retry = document.createElement('button'); retry.textContent = 'Retry PR preparation'; retry.onclick = () => api('POST', '/api/blog-prs/retry', {}).then(refreshBlogPrs).catch(e => toast(e.message)); panel.append(retry); }
+    }
+  } catch {}
+}
 function initGenerate() {
+  refreshBlogPrs();
+  if (!blogPrTimer) blogPrTimer = setInterval(refreshBlogPrs, 5000);
   refreshTranscripts().catch((e) => toast('⚠️ ' + e.message));
   $('genRange').onchange = () => {
     gqueue = [];

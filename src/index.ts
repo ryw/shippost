@@ -31,6 +31,8 @@ const packageJson = JSON.parse(
   readFileSync(join(__dirname, '../package.json'), 'utf-8')
 );
 
+import { processBlogPrs, readBlogPrStatus } from './services/blog-prs.js';
+
 const program = new Command();
 
 program
@@ -153,5 +155,22 @@ program
   .option('--batch <n>', 'Number of accounts per batch (default: 50)', parseInt)
   .option('-y, --yes', 'Skip confirmation prompt')
   .action(unfollowCommand);
+
+program.command('blog-prs')
+  .description('Open one review PR per completed meeting: new essays and revisions')
+  .option('--parent <pid>', 'Stop watching when the UI exits')
+  .option('--watch', 'Watch for completed meetings in the background')
+  .option('--retry', 'Retry failed PR preparation without regenerating content')
+  .action(async (opts) => {
+    do {
+      if (opts.parent) { try { process.kill(Number(opts.parent), 0); } catch { break; } }
+      try {
+        await processBlogPrs(process.cwd(), { retry: opts.retry });
+        if (!opts.watch) console.log(JSON.stringify(readBlogPrStatus(process.cwd()), null, 2));
+      } catch (error) { console.error((error as Error).message); if (!opts.watch) process.exitCode = 1; }
+      opts.retry = false;
+      if (opts.watch) await new Promise(resolve => setTimeout(resolve, 15_000));
+    } while (opts.watch);
+  });
 
 program.parse();
