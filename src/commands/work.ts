@@ -388,7 +388,7 @@ Rules for motif: pick the geometric cover that best fits the post's core metapho
 TRANSCRIPT TO PROCESS:
 ${transcript}`;
 
-  const response = await llm.generate(prompt);
+  const response = await llm.generate(prompt, 'blog-draft');
 
   try {
     const parsed = parseJsonFromResponse(response, isBlogJsonResponse, 'any');
@@ -586,7 +586,7 @@ async function proposeRelatedBlogRevisions(
 
       const prompt = revisionTemplate.replace(/\{\{(transcript|content)\}\}/g, (_, key) => key === 'transcript' ? transcript : content);
 
-      const response = await llm.generate(prompt);
+      const response = await llm.generate(prompt, 'article-revision');
 
       const trimmed = response.trim();
       if (trimmed === 'SKIP') {
@@ -918,7 +918,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
                 transcript
               );
 
-              const response = await llm.generate(strategyPrompt);
+              const response = await llm.generate(strategyPrompt, 'social-draft');
 
               // Parse single post from response
               const posts = parsePostsFromResponse(response);
@@ -947,7 +947,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
                 try {
                   logger.info(`  Substep ${i + 1}/${selectedStrategies.length} · Evaluating social posts`);
                   const evalPrompt = buildBangerEvalPrompt(bangerEvalTemplate, postData.content);
-                  const evalResponse = await llm.generate(evalPrompt);
+                  const evalResponse = await llm.generate(evalPrompt, 'social-evaluation');
                   const evaluation = parseBangerEval(evalResponse);
 
                   if (evaluation) {
@@ -1017,7 +1017,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
             logger.info(`  Prompt length: ${prompt.length} characters`);
           }
 
-          const response = await llm.generate(prompt);
+          const response = await llm.generate(prompt, 'social-draft');
 
           if (options.verbose) {
             logger.info(`  Response length: ${response.length} characters`);
@@ -1055,7 +1055,7 @@ export async function workCommand(options: WorkOptions): Promise<void> {
             // Evaluate banger potential
             try {
               const evalPrompt = buildBangerEvalPrompt(bangerEvalTemplate, postData.content);
-              const evalResponse = await llm.generate(evalPrompt);
+              const evalResponse = await llm.generate(evalPrompt, 'social-evaluation');
               const evaluation = parseBangerEval(evalResponse);
 
               if (evaluation) {

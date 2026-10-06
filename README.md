@@ -852,3 +852,5 @@ Shippost sends requests directly to the Responses endpoint with your subscriptio
 Tokens are stored in the private `.shippost-grok/subscription.json` file with owner-only permissions, refreshed automatically, and never returned to the browser. An existing workspace Grok Build sign-in is imported automatically; use **Reconnect Grok** if it expires or you continue using another client with the old sign-in. Keep `.shippost-grok/` ignored by Git. Existing prompts remain editable and the three-output workflow is unchanged.
 
 References: [OpenCode provider documentation](https://opencode.ai/docs/providers/#xai) and [Grok subscription usage](https://docs.x.ai/grok/faq).
+
+Grok request diagnostics are recorded privately in `.shippost-grok/requests.jsonl`: request purpose, duration, outcome, prompt fingerprint/character count, and token/cache/reasoning counts when returned by the provider. Prompts, response text, credentials, and raw errors are not logged. Diagnostics do not change reasoning effort or trigger extra requests.

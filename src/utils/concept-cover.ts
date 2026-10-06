@@ -211,7 +211,7 @@ export async function generateConceptCoverSvg(
   llm: LLMService,
   post: ConceptPost
 ): Promise<string> {
-  const response = await llm.generate(buildPrompt(post));
+  const response = await llm.generate(buildPrompt(post), 'blog-cover');
   const svg = extractSvg(response);
   if (!isWellFormed(svg)) {
     throw new Error('LLM returned malformed SVG for concept cover');

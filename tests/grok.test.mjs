@@ -21,11 +21,23 @@ test('direct generation uses only subscription auth and no tools or temperature'
     assert.equal(url, 'https://api.x.ai/v1/responses');
     assert.equal(init.headers.Authorization, 'Bearer subscription-token');
     assert.deepEqual(JSON.parse(init.body), { model: 'grok-4.7', input: 'Synthetic meeting prompt', tools: [], store: false, reasoning: { effort: 'high' } });
-    return Response.json({ status: 'completed', output: [{ type: 'reasoning', summary: [] }, { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Generated draft' }] }] });
+    return Response.json({ status: 'completed', usage: { input_tokens: 1200, input_tokens_details: { cached_tokens: 800 }, output_tokens: 300, output_tokens_details: { reasoning_tokens: 250 } }, output: [{ type: 'reasoning', summary: [] }, { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Generated draft' }] }] });
   };
   const service = new GrokService(config, cwd);
   assert.equal(service.getTemperature(), undefined);
-  assert.equal(await service.generate('Synthetic meeting prompt'), 'Generated draft');
+  assert.equal(await service.generate('Synthetic meeting prompt', 'social-draft'), 'Generated draft');
+  const telemetryPath = join(cwd, '.shippost-grok/requests.jsonl');
+  const raw = readFileSync(telemetryPath, 'utf8');
+  const record = JSON.parse(raw);
+  assert.equal(record.purpose, 'social-draft');
+  assert.equal(record.reasoningEffort, 'high');
+  assert.equal(record.inputTokens, 1200);
+  assert.equal(record.cachedInputTokens, 800);
+  assert.equal(record.reasoningTokens, 250);
+  assert.equal(record.outcome, 'completed');
+  assert.ok(record.elapsedMs >= 0);
+  assert.equal(statSync(telemetryPath).mode & 0o777, 0o600);
+  for (const secret of ['Synthetic meeting prompt', 'Generated draft', 'subscription-token', 'refresh-token']) assert.ok(!raw.includes(secret));
 });
 test('errors distinguish authentication, allowance and server failures without leaking bodies', async t => {
   const service = new GrokService(config, workspace(t));
