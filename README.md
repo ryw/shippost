@@ -874,7 +874,7 @@ repository and target branch. The repository must match the current workspace's
 
 With `ship ui` running, a separate worker waits for both the blog and revisions
 targets to succeed for a meeting. It packages all that meeting's new essays,
-covers, homepage entries, and suggested revisions in **one draft PR**. An empty
+covers, homepage entries, and suggested revisions in **one ready-for-review PR**. An empty
 revision selection does not block new essays. A failed generation target does.
 Generation continues while the worker runs lint and the production build in an
 isolated checkout. Existing installed dependencies are copied only when dependency

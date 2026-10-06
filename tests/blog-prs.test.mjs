@@ -82,6 +82,9 @@ test('successful preparation stages only publication paths and validates before 
   const build=calls.findIndex(c=>c[0]==='pnpm'&&c[1]==='build');
   const commit=calls.findIndex(c=>c[1]==='commit');
   assert.ok(build>=0&&commit>build);
+  const create = calls.find(c => (c[0] === 'tembo' && c[1] === 'pull-request') || (c[0] === 'gh' && c[2] === 'create'));
+  assert.ok(create);
+  assert.ok(!create.includes('--draft'), 'website PRs must be ready for review');
   const staged=calls.find(c=>c[0]==='git'&&c[1]==='add').slice(3);
   assert.deepEqual(staged.sort(),['public/images/posts/new-essay.svg','src/content/posts/new-essay.mdx','src/lib/homepage-sections.ts'].sort());
 });

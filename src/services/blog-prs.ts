@@ -212,8 +212,8 @@ async function openBundle(cwd: string, bundle: Bundle, branch: string, run: Run)
     const title = bundle.newPosts.length ? `Review: ${bundle.newPosts[0]}${bundle.newPosts.length > 1 ? ` + ${bundle.newPosts.length - 1} more` : ''}${bundle.revisions.length ? ' and revisions' : ''}` : 'Review: suggested article revisions';
     const body = `Generated website content from one meeting. Review all new essays and suggested edits together before merging.\n\nNew essays: ${bundle.newPosts.join(', ') || 'None'}.\n\nSuggested revisions: ${bundle.revisions.join(', ') || 'None selected'}.\n\nIncludes article covers and homepage placement. Meeting notes and local workspace state are excluded. Merging publishes these changes.\n\nValidation: pnpm lint and pnpm build passed in an isolated checkout before pushing. Dependencies are reused from the existing workspace when its manifests match; otherwise installation is frozen. A clean dependency install is a separate check.\n`;
     const bodyPath = join(temp, 'body.md'); writeFileSync(bodyPath, body);
-    if (process.env.TEMBO_SESSION_ID) await run('tembo', ['pull-request', 'create', '--title', title, '--body-file', bodyPath, '--head-branch', branch, '--base-branch', base, '--draft', '--repository-url', `https://github.com/${repository}`], worktree);
-    else await run('gh', ['pr', 'create', '--repo', repository, '--title', title, '--body-file', bodyPath, '--head', branch, '--base', base, '--draft'], worktree);
+    if (process.env.TEMBO_SESSION_ID) await run('tembo', ['pull-request', 'create', '--title', title, '--body-file', bodyPath, '--head-branch', branch, '--base-branch', base, '--repository-url', `https://github.com/${repository}`], worktree);
+    else await run('gh', ['pr', 'create', '--repo', repository, '--title', title, '--body-file', bodyPath, '--head', branch, '--base', base], worktree);
     const created = JSON.parse(await run('gh', ['pr', 'list', '--repo', repository, '--head', branch, '--state', 'all', '--json', 'url'], cwd));
     if (!created[0]?.url) throw new Error('PR was not found after creation; retry to reconcile');
     return created[0].url;
